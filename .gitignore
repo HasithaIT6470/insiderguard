@@ -1,7 +1,37 @@
-insiderguard.db
-.secret_key
+
+# Python cache and test files
 __pycache__/
+*.py[cod]
 .pytest_cache/
+.coverage
+htmlcov/
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Node.js dependencies and build output
 node_modules/
 dist/
-*.csv
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE and operating system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
