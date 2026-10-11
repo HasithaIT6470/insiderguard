@@ -1,0 +1,21 @@
+:root {
+  --ig-navy: #14213d;
+  --ig-low: #2e7d32;
+  --ig-medium: #b7791f;
+  --ig-high: #d9480f;
+  --ig-critical: #b00020;
+}
+body { background: #f4f6fa; }
+.navbar-ig { background: var(--ig-navy); }
+.badge-Low { background: var(--ig-low); }
+.badge-Medium { background: var(--ig-medium); }
+.badge-High { background: var(--ig-high); }
+.badge-Critical { background: var(--ig-critical); }
+.card { border: 0; box-shadow: 0 1px 3px rgba(20, 33, 61, 0.1); }
+.kpi { font-size: 2rem; font-weight: 700; line-height: 1; }
+.score-bar { height: 8px; border-radius: 4px; background: #e3e7ef; overflow: hidden; }
+.score-bar > div { height: 100%; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; }
+.ai-box { border-left: 4px solid #6f42c1; background: #f6f1fc; }
+.clickable { cursor: pointer; }
+.clickable:hover { background: #eef2fb; }

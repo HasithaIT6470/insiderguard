@@ -1,0 +1,51 @@
+import { useEffect, useState } from 'react'
+
+export const CATEGORY_COLOR = { Low: '#2e7d32', Medium: '#b7791f', High: '#d9480f', Critical: '#b00020' }
+
+export function CategoryBadge({ category }) {
+  return <span className={`badge badge-${category}`}>{category}</span>
+}
+
+export function ScoreBar({ score, category }) {
+  return (
+    <div className="d-flex align-items-center gap-2" style={{ minWidth: 140 }}>
+      <div className="score-bar flex-grow-1" role="progressbar" aria-valuenow={score} aria-valuemin={0} aria-valuemax={100}>
+        <div style={{ width: `${Math.min(100, score)}%`, background: CATEGORY_COLOR[category] || '#888' }} />
+      </div>
+      <span className="fw-semibold">{Number(score).toFixed(0)}</span>
+    </div>
+  )
+}
+
+export function fmt(ts) {
+  if (!ts) return '—'
+  const d = new Date(ts.endsWith('Z') ? ts : ts + 'Z')
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }) + ' UTC'
+}
+
+export function useLoad(fn, deps = []) {
+  const [state, setState] = useState({ data: null, error: null, loading: true })
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    let alive = true
+    setState((s) => ({ ...s, loading: true }))
+    fn()
+      .then((data) => alive && setState({ data, error: null, loading: false }))
+      .catch((error) => alive && setState({ data: null, error, loading: false }))
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [...deps, tick])
+  return { ...state, reload: () => setTick((t) => t + 1) }
+}
+
+export function Status({ loading, error, children }) {
+  if (loading) return <div className="text-muted py-4">Loading…</div>
+  if (error) return <div className="alert alert-danger">{error.message}</div>
+  return children
+}
+
+export const STATUS_LABEL = { open: 'Open', under_investigation: 'Under investigation', closed: 'Closed' }
+
+export const DISCLAIMER = 'Risk scores are investigative leads only and are not proof of malicious intent.'

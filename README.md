@@ -1,0 +1,114 @@
+# InsiderGuard
+
+AI-assisted insider threat detection and data-exfiltration prevention — a lightweight UEBA prototype that implements the
+*Software Stack Specification* (IE3092, Group 03). **Synthetic data only.** No real credentials, no automatic
+enforcement, no SIEM/XDR integration.
+
+```
+insiderguard/
+├── backend/    FastAPI · SQLAlchemy · pandas/NumPy · JWT+bcrypt+RBAC · pytest
+└── frontend/   React · Bootstrap · Chart.js (Vite) · Vitest
+```
+
+## Quick start
+
+```bash
+# 1. Backend  (Python 3.11+)
+cd backend
+pip install -r requirements.txt
+python -m app.seed --reset          # generates labelled synthetic data, scores it, runs the evaluation
+uvicorn app.main:app --reload       # API on :8000  (docs at /docs)
+
+# 2. Frontend (Node 18+)
+cd ../frontend
+npm install
+npm run dev                         # UI on http://localhost:5173 (proxies /api to :8000)
+```
+
+Development accounts (seeded only when `INSIDERGUARD_ENV != production`; override with
+`INSIDERGUARD_ADMIN_PASSWORD` / `INSIDERGUARD_ANALYST_PASSWORD`):
+
+| Role    | Username  | Password         | Can do |
+|---------|-----------|------------------|--------|
+| admin   | `admin`   | `Admin#12345`    | everything: ingest, honeytokens, rule thresholds, audit log |
+| analyst | `analyst` | `Analyst#12345`  | dashboard, alerts, cases/notes, AI explanation, reports, evaluation |
+
+**Change these before exposing the service anywhere.** In production, set `INSIDERGUARD_ENV=production`
+and `INSIDERGUARD_SECRET_KEY` (the app refuses to start without it), and set `DATABASE_URL` for PostgreSQL
+(e.g. `postgresql+psycopg://user:pw@host/insiderguard`; install `psycopg[binary]`).
+
+### Optional Generative AI explanations
+Set `AI_API_KEY` (and optionally `AI_API_URL`, `AI_MODEL`). Defaults target the Anthropic Messages API. Only an
+**anonymized, structured** summary is sent (pseudonymous subject ID, indicator names, weights, numeric facts — no
+user IDs, resource paths or device IDs). Without a key, or if the call fails, everything still works and the alert
+shows the deterministic evidence with no narrative.
+
+### Feeding your own telemetry
+```bash
+python -m app.generator --out events.csv                       # CSV + ground-truth files
+python -m app.generator --post http://localhost:8000 --user admin --password '…'   # via REST
+```
+or use **Telemetry & Honeytokens → Import** in the UI (CSV/JSON). Field aliases, mixed timestamp formats and
+bytes→MB are normalized; bad rows are rejected with structured per-field errors and logged for the administrator.
+
+## How it works
+
+1. **Ingest / normalize** (`normalize.py`, `pipeline.ingest_records`) → standard event schema, validation, error log.
+2. **Baseline** (`engine.compute_baseline`) — per user, from the first `baseline_days` (14) of history: circular
+   login-hour mean/σ, daily file-access and download-volume mean/σ, known devices and resource types. Users with too
+   little history are `baseline pending` (rules still apply, anomaly engine does not).
+3. **Rule engine** — bulk download (per-file and daily total), failed-logon bursts, repeated denied access, off-hours
+   activity, restricted-resource access. Thresholds and weights are editable by admins (`/api/rules`).
+4. **Anomaly engine** — z-score vs the user's *own* baseline for login time, access volume, download volume, plus
+   unknown device and novel resource category. The baseline values used are stored in each indicator.
+5. **Honeytoken engine** — any access to an active registered decoy fires the highest-weight indicator (50).
+6. **Risk scoring** — strongest indicator per category (time, volume, resource, denied, device, honeytoken) within a
+   rolling window, summed, plus a correlation bonus (+10/+20/+25 for 2/3/4+ categories inside 60 min), capped at 100.
+   Low < 25 ≤ Medium < 50 ≤ High < 75 ≤ Critical. Fully deterministic; the per-indicator breakdown is stored.
+7. **AI layer** — explanation only; clearly labelled as not the source of the score.
+8. **Dashboard / cases / reports / audit** — ranked users, evidence timeline, department trends, case status + notes,
+   period/department reports (JSON, CSV, print), audit log of analyst actions.
+9. **Evaluation** — precision, recall, F1, FPR, FNR and detection latency for Rule-Only, Anomaly-Only and Hybrid on the
+   labelled data set (unit: user-day after each user's learning window; latency = scenario start → first alert).
+
+## API (Table 12 + supporting endpoints)
+
+`POST /api/events` · `POST /api/events/import` · `GET /api/users/{id}/risk` · `GET /api/users/{id}/timeline` ·
+`GET /api/alerts` · `GET /api/dashboard/summary` · `POST /api/honeytokens` · `GET /api/evaluation/results`
+— plus auth, users list, alert detail/status/notes/explain, honeytoken list/revoke, rules, reports, audit,
+parse-errors, evaluation run. Interactive docs at `/docs`.
+
+## Reference result (seed 42, 30 users, 49 days, 20 labelled scenarios)
+
+| Mode         | Precision | Recall | F1   | FPR   | Scenarios caught | Median latency |
+|--------------|-----------|--------|------|-------|------------------|----------------|
+| Rule-Only    | 0.71      | 0.34   | 0.47 | 0.6 % | 10 / 20          | 17 min         |
+| Anomaly-Only | 0.88      | 0.72   | 0.79 | 0.4 % | 12 / 20          | 14 min         |
+| Hybrid       | 0.85      | 1.00   | 0.92 | 0.7 % | 20 / 20          | 6 min          |
+
+Caveat: the generator and detectors were built together, and the data includes "rule-evasive" (low-and-slow,
+new-device) and "baseline-aware" scenarios by design. These numbers demonstrate the comparison harness and the
+value of combining signals; they are **not** a claim about real-world accuracy.
+
+## Tests
+```bash
+cd backend && python -m pytest -q       # 15 tests: normalization, engines, scoring, API, RBAC, audit, cases
+cd frontend && npm test                 # component tests
+```
+
+## Spec traceability
+REQ-01 ingestion → `api.post_events/import_events`, `pipeline.ingest_records` · REQ-02 → `normalize.py` ·
+REQ-03 → `engine.compute_baseline` · REQ-04 → `engine.detect_user`, `/api/rules` · REQ-05 → anomaly section of
+`detect_user` · REQ-06 → honeytoken registry + engine · REQ-07 → `engine.score_window/build_series` ·
+REQ-08 → `ai.py` · REQ-09 → dashboard, `/api/reports/risk`, case endpoints · REQ-10 → `AuditLog`, `evaluation.py`.
+
+## Design notes and known limitations
+- **"Maximum sum" (REQ-07-01)** is implemented as the sum of per-category maxima, capped at 100.
+- **Safety:** the system never blocks or disables accounts; every score view carries the "investigative lead, not proof"
+  notice.
+- **Baseline recalculation (REQ-03-03):** baselines are recomputed from the user's stored history on every ingest
+  batch, but the learning window is the user's first 14 days, so established baselines do not drift (this prevents an
+  attacker from slowly training the baseline). A rolling/adaptive baseline would be a future extension.
+- Processing is synchronous per ingest batch (fine for the prototype's ~40k events; use a queue for larger loads).
+- Login throttling is in-memory per process; use a shared store behind multiple workers. Token is kept in
+  `sessionStorage`; put the API behind HTTPS in any deployment.
