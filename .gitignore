@@ -35,3 +35,10 @@ Thumbs.db
 *.db
 *.sqlite
 *.sqlite3
+
+
+
+# Local secrets and demo state
+.secret_key
+connector_state.json
+connector_state.tmp
