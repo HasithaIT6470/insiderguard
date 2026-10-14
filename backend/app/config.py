@@ -46,9 +46,9 @@ SECRET_KEY = _load_secret()
 
 # Default accounts are seeded only outside production, using env overrides if given.
 DEFAULT_ADMIN_USER = os.getenv("INSIDERGUARD_ADMIN_USER", "admin")
-DEFAULT_ADMIN_PASSWORD = os.getenv("INSIDERGUARD_ADMIN_PASSWORD", "Admin#12345")
+DEFAULT_ADMIN_PASSWORD = os.getenv("INSIDERGUARD_ADMIN_PASSWORD", "Guard#12345")
 DEFAULT_ANALYST_USER = os.getenv("INSIDERGUARD_ANALYST_USER", "analyst")
-DEFAULT_ANALYST_PASSWORD = os.getenv("INSIDERGUARD_ANALYST_PASSWORD", "Analyst#12345")
+DEFAULT_ANALYST_PASSWORD = os.getenv("INSIDERGUARD_ANALYST_PASSWORD", "Review#12345")
 
 # key -> (default value, description). Stored in DB so administrators can modify them (REQ-04-04).
 DEFAULT_RULES: dict[str, tuple[float, str]] = {

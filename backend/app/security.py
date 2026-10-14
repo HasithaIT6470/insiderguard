@@ -1,5 +1,7 @@
 """Authentication (JWT + bcrypt) and role-based access control."""
 from datetime import datetime, timedelta, timezone
+import hashlib
+import hmac
 
 import bcrypt
 from fastapi import Depends, HTTPException, status
@@ -16,7 +18,19 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 ROLES = ("admin", "analyst")
 
 
-def hash_password(password: str) -> str:
+def validate_password(password: str, username: str) -> None:
+    if len(password) < 10:
+        raise HTTPException(422, "Password must contain at least 10 characters")
+    if len(password.encode("utf-8")) > 72:
+        raise HTTPException(422, "Password must be at most 72 UTF-8 bytes")
+    if not any(char.isalpha() for char in password) or not any(char.isdigit() for char in password):
+        raise HTTPException(422, "Password must contain at least one letter and one digit")
+    if username.casefold() in password.casefold():
+        raise HTTPException(422, "Password must not equal or contain the username")
+
+
+def hash_password(password: str, username: str) -> str:
+    validate_password(password, username)
     raw = password.encode("utf-8")
     if len(raw) > 72:
         raise ValueError("password must be at most 72 bytes")
@@ -25,15 +39,20 @@ def hash_password(password: str) -> str:
 
 def verify_password(password: str, hashed: str) -> bool:
     try:
-        return bcrypt.checkpw(password.encode("utf-8")[:72], hashed.encode("utf-8"))
+        raw = password.encode("utf-8")
+        return len(raw) <= 72 and bcrypt.checkpw(raw, hashed.encode("utf-8"))
     except ValueError:
         return False
+
+
+def pw_fingerprint(user: User) -> str:
+    return hashlib.sha256(user.password_hash.encode()).hexdigest()[:16]
 
 
 def create_token(user: User) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=config.ACCESS_TOKEN_MINUTES)
     return jwt.encode(
-        {"sub": user.username, "role": user.role, "exp": expire},
+        {"sub": user.username, "role": user.role, "exp": expire, "pwv": pw_fingerprint(user)},
         config.SECRET_KEY,
         algorithm=config.JWT_ALGORITHM,
     )
@@ -53,7 +72,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if not username:
         raise err
     user = db.scalar(select(User).where(User.username == username))
-    if user is None:
+    fingerprint = payload.get("pwv")
+    if user is None or not isinstance(fingerprint, str) or not hmac.compare_digest(fingerprint, pw_fingerprint(user)):
         raise err
     return user
 

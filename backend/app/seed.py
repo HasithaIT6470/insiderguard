@@ -32,11 +32,11 @@ def main():
     db = SessionLocal()
     try:
         seed_rule_config(db)
-        if db.scalar(select(User).limit(1)) is None:
+        if config.ENV != "production" and db.scalar(select(User).limit(1)) is None:
             db.add(User(username=config.DEFAULT_ADMIN_USER, role="admin",
-                        password_hash=hash_password(config.DEFAULT_ADMIN_PASSWORD)))
+                        password_hash=hash_password(config.DEFAULT_ADMIN_PASSWORD, config.DEFAULT_ADMIN_USER)))
             db.add(User(username=config.DEFAULT_ANALYST_USER, role="analyst",
-                        password_hash=hash_password(config.DEFAULT_ANALYST_PASSWORD)))
+                        password_hash=hash_password(config.DEFAULT_ANALYST_PASSWORD, config.DEFAULT_ANALYST_USER)))
             db.commit()
         t0 = time.time()
         events, honeytokens, truth = generate(args.seed, args.users, args.days)

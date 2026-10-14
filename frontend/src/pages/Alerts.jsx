@@ -1,25 +1,41 @@
-import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { ArrowRight, Bell, CheckCheck, ChevronLeft, ChevronRight, RefreshCw, Search, ShieldAlert } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, Bell, CheckCheck, ChevronLeft, ChevronRight, RefreshCw, RotateCcw, Search, ShieldAlert } from 'lucide-react'
 import { api } from '../api'
 import { CategoryBadge, DISCLAIMER, ScoreBar, Status, STATUS_LABEL, fmt, useLoad } from '../components.jsx'
 
 const PAGE_SIZE = 20
 const LIMIT = 1000
+const SORT_COLUMNS = { id: 'Alert ID', user_id: 'User', department: 'Department', start_time: 'Started', peak_score: 'Peak score', category: 'Risk level', status: 'Case status', indicator_count: 'Indicator count' }
+const DEFAULT_SORT = { sort_by: 'peak_score', sort_dir: 'desc', then_by: 'start_time', then_dir: 'desc' }
+
+function SortHeader({ column, label, sort, onSort }) {
+  const primary = sort.sort_by === column
+  const secondary = !primary && sort.then_by === column
+  const direction = primary ? sort.sort_dir : sort.then_dir
+  const Icon = primary || secondary ? (direction === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
+  return <th scope="col" aria-sort={primary ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}><button className="alerts-sort-header" onClick={() => onSort({ sort_by: column, sort_dir: primary && sort.sort_dir === 'asc' ? 'desc' : 'asc' })}>{label}<Icon size={13} aria-hidden="true" />{secondary && <span title="Secondary sort">2</span>}</button></th>
+}
 
 export default function Alerts() {
-  const { data, loading, error, reload } = useLoad(() => api.alerts({ limit: LIMIT }))
+  const [searchParams, setSearchParams] = useSearchParams()
+  const sort = Object.fromEntries(Object.entries(DEFAULT_SORT).map(([key, fallback]) => [key, searchParams.get(key) ?? fallback]))
   const [filters, setFilters] = useState({ query: '', status: '', category: '', department: '' })
-  const [sort, setSort] = useState('risk')
+  const { data, loading, error, reload } = useLoad(() => api.alerts({ limit: LIMIT, ...sort, ...(filters.status ? { status: filters.status } : {}), ...(filters.category ? { category: filters.category } : {}), ...(filters.department ? { department: filters.department } : {}) }), [sort.sort_by, sort.sort_dir, sort.then_by, sort.then_dir, filters.status, filters.category, filters.department])
   const [page, setPage] = useState(1)
+  const [departments, setDepartments] = useState([])
   const alerts = data || []
-  const departments = useMemo(() => [...new Set((data || []).map(a => a.department).filter(Boolean))].sort(), [data])
+  useEffect(() => { if (data) setDepartments(previous => [...new Set([...previous, ...data.map(a => a.department).filter(Boolean)])].sort()) }, [data])
+  useEffect(() => { setPage(1) }, [sort.sort_by, sort.sort_dir, sort.then_by, sort.then_dir])
+  const changeSort = updates => {
+    setSearchParams(previous => { const next = new URLSearchParams(previous); Object.entries({ ...sort, ...updates }).forEach(([key, value]) => next.set(key, value)); return next })
+    setPage(1)
+  }
   const counts = useMemo(() => ({ open: alerts.filter(a => a.status === 'open').length, investigating: alerts.filter(a => a.status === 'under_investigation').length, closed: alerts.filter(a => a.status === 'closed').length, critical: alerts.filter(a => a.category === 'Critical').length }), [data])
   const filtered = useMemo(() => {
     const search = filters.query.trim().toLowerCase()
     return (data || []).filter(a => (!filters.status || a.status === filters.status) && (!filters.category || a.category === filters.category) && (!filters.department || a.department === filters.department) && (!search || [a.id, a.user_id, a.department, ...(a.breakdown || []).map(b => b.name)].join(' ').toLowerCase().includes(search)))
-      .sort((a, b) => sort === 'newest' ? new Date(b.start_time) - new Date(a.start_time) : sort === 'oldest' ? new Date(a.start_time) - new Date(b.start_time) : b.peak_score - a.peak_score || new Date(b.start_time) - new Date(a.start_time))
-  }, [data, filters, sort])
+  }, [data, filters])
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const currentPage = Math.min(page, pages)
   const start = (currentPage - 1) * PAGE_SIZE
@@ -33,6 +49,7 @@ export default function Alerts() {
       <div><h1>Alerts</h1><p className="text-muted mb-0">Detection evidence and investigation workload</p></div>
       <button className="btn btn-sm btn-outline-light d-inline-flex align-items-center gap-2" onClick={reload} disabled={loading}><RefreshCw size={15} aria-hidden="true" />Refresh</button>
     </header>
+    {error && <button className="btn btn-sm btn-outline-light align-self-start" onClick={() => changeSort(DEFAULT_SORT)}>Reset sort</button>}
     <Status loading={loading} error={error}>
       {data && <>
         <section className="dash-metrics" aria-label="Loaded alert summary">
@@ -45,7 +62,6 @@ export default function Alerts() {
         </section>
         <section className="card dash-panel">
           <div className="dash-panel-heading"><div><h2>Alert queue</h2><p>{alerts.length.toLocaleString()} loaded alerts</p></div>
-            <div className="alerts-sort"><label htmlFor="alert-sort">Sort by</label><select id="alert-sort" className="form-select form-select-sm" value={sort} onChange={e => { setSort(e.target.value); setPage(1) }}><option value="risk">Highest risk</option><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></div>
           </div>
           <div className="dash-filters alerts-filters">
             <div className="dash-search"><Search size={17} aria-hidden="true" /><input className="form-control form-control-sm" aria-label="Search alerts" placeholder="Search alert, user or indicator" value={filters.query} onChange={e => updateFilter('query', e.target.value)} /></div>
@@ -54,16 +70,21 @@ export default function Alerts() {
             <select className="form-select form-select-sm" aria-label="Department" value={filters.department} onChange={e => updateFilter('department', e.target.value)}><option value="">All departments</option>{departments.map(d => <option key={d}>{d}</option>)}</select>
             {hasFilters && <button className="btn btn-link btn-sm" onClick={clearFilters}>Clear filters</button>}
           </div>
-          {alerts.length >= LIMIT && <p className="alerts-limit" role="status">Summary and filters cover the {LIMIT.toLocaleString()} highest-ranked alerts returned by the API.</p>}
+          <div className="alerts-sort-panel" aria-label="Alert sorting">
+            <div className="alerts-sort"><label htmlFor="primary-sort">Sort by</label><select id="primary-sort" className="form-select form-select-sm" value={sort.sort_by} onChange={e => changeSort({ sort_by: e.target.value })}>{Object.entries(SORT_COLUMNS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><button className="btn btn-sm btn-outline-secondary telemetry-command" aria-label={`Primary sort direction: ${sort.sort_dir === 'asc' ? 'ascending' : 'descending'}`} title="Toggle primary sort direction" onClick={() => changeSort({ sort_dir: sort.sort_dir === 'asc' ? 'desc' : 'asc' })}>{sort.sort_dir === 'asc' ? <ArrowUp size={15} /> : <ArrowDown size={15} />}{sort.sort_dir === 'asc' ? 'Asc' : 'Desc'}</button></div>
+            <div className="alerts-sort"><label htmlFor="secondary-sort">Then by</label><select id="secondary-sort" className="form-select form-select-sm" value={sort.then_by} onChange={e => changeSort({ then_by: e.target.value })}><option value="">None</option>{Object.entries(SORT_COLUMNS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><button className="btn btn-sm btn-outline-secondary telemetry-command" disabled={!sort.then_by} aria-label={`Secondary sort direction: ${sort.then_dir === 'asc' ? 'ascending' : 'descending'}`} title="Toggle secondary sort direction" onClick={() => changeSort({ then_dir: sort.then_dir === 'asc' ? 'desc' : 'asc' })}>{sort.then_dir === 'asc' ? <ArrowUp size={15} /> : <ArrowDown size={15} />}{sort.then_dir === 'asc' ? 'Asc' : 'Desc'}</button></div>
+            <button className="btn btn-sm btn-outline-secondary telemetry-command" onClick={() => changeSort(DEFAULT_SORT)}><RotateCcw size={14} aria-hidden="true" />Reset sort</button><span className="alerts-sort-count" aria-live="polite">Showing {filtered.length.toLocaleString()} alerts</span>
+          </div>
+          {alerts.length >= LIMIT && <p className="alerts-limit" role="status">Summary and search cover the first {LIMIT.toLocaleString()} alerts in the selected sort order.</p>}
           <div className="table-responsive"><table className="table table-hover align-middle mb-0 alerts-table">
-            <thead><tr><th scope="col">Alert / user</th><th scope="col">Department</th><th scope="col">Peak risk</th><th scope="col">Case status</th><th scope="col">Started (UTC)</th><th scope="col">Top indicators</th><th scope="col"><span className="visually-hidden">Investigation</span></th></tr></thead>
+            <thead><tr>{[['id', 'Alert'], ['user_id', 'User'], ['department', 'Department'], ['peak_score', 'Peak score'], ['category', 'Risk level'], ['status', 'Case status'], ['start_time', 'Started (UTC)'], ['indicator_count', 'Indicators']].map(([column, label]) => <SortHeader key={column} column={column} label={label} sort={sort} onSort={changeSort} />)}<th scope="col"><span className="visually-hidden">Investigation</span></th></tr></thead>
             <tbody>{visible.map(a => <tr key={a.id}>
-              <td><Link className="fw-semibold" to={`/alerts/${a.id}`}>Alert #{a.id}</Link><Link className="alerts-user-link" to={`/users/${encodeURIComponent(a.user_id)}`}>{a.user_id}</Link></td>
+              <td><Link className="fw-semibold" to={`/alerts/${a.id}`}>Alert #{a.id}</Link></td><td><Link to={`/users/${encodeURIComponent(a.user_id)}`}>{a.user_id}</Link></td>
               <td>{a.department || 'Unassigned'}</td>
-              <td><div className="alerts-score"><CategoryBadge category={a.category} /><ScoreBar score={a.peak_score} category={a.category} /></div></td>
+              <td><ScoreBar score={a.peak_score} category={a.category} /></td><td><CategoryBadge category={a.category} /></td>
               <td><span className={`alerts-status alerts-status-${a.status}`}>{STATUS_LABEL[a.status] || a.status}</span></td>
               <td className="alerts-date">{fmt(a.start_time)}</td>
-              <td className="alerts-indicators">{(a.breakdown || []).length ? <ul>{a.breakdown.slice(0, 3).map((b, i) => <li key={i}>{b.name}</li>)}</ul> : <span className="text-muted">No indicators</span>}{a.breakdown?.length > 3 && <span className="text-muted">+{a.breakdown.length - 3} more</span>}</td>
+              <td className="alerts-indicators">{(a.breakdown || []).length ? <><span className="text-muted">{a.breakdown.length} indicators</span><ul>{a.breakdown.slice(0, 3).map((b, i) => <li key={i}>{b.name}</li>)}</ul></> : <span className="text-muted">No indicators</span>}{a.breakdown?.length > 3 && <span className="text-muted">+{a.breakdown.length - 3} more</span>}</td>
               <td><Link className="dash-investigate" to={`/alerts/${a.id}`} aria-label={`Investigate alert ${a.id}`} title={`Investigate alert ${a.id}`}><ArrowRight size={18} aria-hidden="true" /></Link></td>
             </tr>)}</tbody>
           </table></div>

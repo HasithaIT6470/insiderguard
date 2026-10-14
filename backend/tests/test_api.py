@@ -29,7 +29,7 @@ def test_list_accounts_admin_only(client, admin, analyst):
     assert response.status_code == 200
     accounts = response.json()
     assert {account["username"] for account in accounts} >= {"admin", "analyst"}
-    assert all(set(account) == {"username", "role", "created_at"} for account in accounts)
+    assert all(set(account) == {"id", "username", "role", "created_at"} for account in accounts)
 
 
 def test_full_flow_ingest_score_case_and_evaluate(client, admin, analyst):
@@ -102,3 +102,34 @@ def test_honeytoken_revoke_stops_detection(client, admin, analyst):
     tl = client.get("/api/users/u001/timeline", headers=analyst).json()
     assert not any(t["source"] == "honeytoken" and (t["event"] or {}).get("resource", "").endswith("extra_decoy.xlsx")
                    for t in tl)
+
+
+def test_rule_management_admin_only(client, admin, analyst):
+    body = {"key": "custom_limit", "description": "Custom numeric parameter", "value": 150}
+    assert client.get("/api/rules", headers=analyst).status_code == 200
+    assert client.post("/api/rules", json=body).status_code == 401
+    assert client.post("/api/rules", json=body, headers=analyst).status_code == 403
+    assert client.delete("/api/rules/custom_limit", headers=analyst).status_code == 403
+    assert client.put("/api/rules", json={"values": {"alert_threshold": 40}}, headers=analyst).status_code == 403
+    created = client.post("/api/rules", json=body, headers=admin)
+    assert created.status_code == 201
+    assert created.json()["built_in"] is False
+    assert client.post("/api/rules", json=body, headers=admin).status_code == 409
+    rules = client.get("/api/rules", headers=analyst).json()
+    assert any(r["key"] == "custom_limit" and r["value"] == 150 for r in rules)
+    assert client.put("/api/rules", json={"values": {"custom_limit": 175}}, headers=admin).status_code == 200
+    assert client.delete("/api/rules/alert_threshold", headers=admin).status_code == 409
+    assert client.delete("/api/rules/custom_limit", headers=admin).status_code == 200
+    assert client.delete("/api/rules/custom_limit", headers=admin).status_code == 404
+    actions = {entry["action"] for entry in client.get("/api/audit", headers=admin).json()}
+    assert {"create_rule", "delete_rule"} <= actions
+
+
+def test_rule_creation_validation(client, admin):
+    for body in [
+        {"key": "bad key", "description": "Invalid name", "value": 1},
+        {"key": "custom_limit", "description": " ", "value": 1},
+        {"key": "custom_limit", "description": "Negative", "value": -1},
+        {"key": "custom_limit", "description": "Too large", "value": 1000001},
+    ]:
+        assert client.post("/api/rules", json=body, headers=admin).status_code == 422

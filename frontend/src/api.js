@@ -15,7 +15,7 @@ export function setAuth(a) {
 
 export class ApiError extends Error {
   constructor(status, detail) {
-    super(typeof detail === 'string' ? detail : detail?.message || `Request failed (${status})`)
+    super(typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map(error => error.msg).join('; ') : detail?.message || `Request failed (${status})`)
     this.status = status
     this.detail = detail
   }
@@ -49,8 +49,12 @@ async function request(path, { method = 'GET', body, form, raw } = {}) {
 }
 
 export const api = {
+  me: () => request('/auth/me'),
+  changePassword: (current_password, new_password) => request('/auth/change-password', { method: 'POST', body: { current_password, new_password } }),
   accounts: () => request('/auth/accounts'),
   createAccount: (body) => request('/auth/accounts', { method: 'POST', body }),
+  deleteAccount: (id) => request(`/auth/accounts/${id}`, { method: 'DELETE' }),
+  resetPassword: (id, new_password) => request(`/auth/accounts/${id}/reset-password`, { method: 'POST', body: { new_password } }),
   login: async (username, password) => {
     const form = new URLSearchParams({ username, password })
     const res = await fetch('/api/auth/login', { method: 'POST', body: form })
@@ -79,10 +83,14 @@ export const api = {
   },
   parseErrors: () => request('/parse-errors?limit=50'),
   rules: () => request('/rules'),
+  createRule: (body) => request('/rules', { method: 'POST', body }),
+  deleteRule: (key) => request(`/rules/${encodeURIComponent(key)}`, { method: 'DELETE' }),
   updateRules: (values) => request('/rules', { method: 'PUT', body: { values } }),
   evaluation: () => request('/evaluation/results'),
   runEvaluation: () => request('/evaluation/run', { method: 'POST' }),
   report: (params = {}) => request(`/reports/risk?${new URLSearchParams(params)}`),
+  reportIndicators: () => request('/reports/indicators'),
+  reportRange: () => request('/reports/range'),
   reportCsv: async (params = {}) => (await request(`/reports/risk?${new URLSearchParams({ ...params, format: 'csv' })}`, { raw: true })).blob(),
   audit: () => request('/audit?limit=200'),
 }

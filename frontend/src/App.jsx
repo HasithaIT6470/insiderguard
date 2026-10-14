@@ -10,6 +10,7 @@ import Telemetry from './pages/Telemetry.jsx'
 import Evaluation from './pages/Evaluation.jsx'
 import Reports from './pages/Reports.jsx'
 import Accounts from './pages/Accounts.jsx'
+import Profile from './pages/Profile.jsx'
 
 const AuthCtx = createContext(null)
 export const useAuth = () => useContext(AuthCtx)
@@ -82,7 +83,7 @@ function Shell({ children }) {
           </a>
         </nav>
         <div className="ig-account">
-          <div className="ig-account-details"><span className="ig-avatar" aria-hidden="true">{auth.username.slice(0, 1).toUpperCase()}</span><div><strong>{auth.username}</strong><span className="ig-role">{auth.role}</span></div></div>
+          <div className="ig-account-details"><span className="ig-avatar" aria-hidden="true">{auth.username.slice(0, 1).toUpperCase()}</span><div><Link className="ig-profile-link" to="/profile" onClick={() => setMenuOpen(false)}>{auth.username}</Link><span className="badge bg-secondary mt-1">{auth.role}</span></div></div>
           <button className="ig-sign-out" onClick={logout}><LogOut size={18} aria-hidden="true" />Sign out</button>
         </div>
       </aside>
@@ -97,11 +98,21 @@ function Protected({ children }) {
   return <Shell>{children}</Shell>
 }
 
+function AdminOnly({ children }) {
+  const { auth } = useAuth()
+  return auth?.role === 'admin' ? children : <Navigate to="/" replace />
+}
+
 export default function App() {
   const [auth, setAuthState] = useState(getAuth())
   const navigate = useNavigate()
   const value = {
     auth,
+    updateToken: (token) => {
+      const updated = { ...getAuth(), token }
+      setAuth(updated)
+      setAuthState(updated)
+    },
     login: (data) => {
       const a = { token: data.access_token, username: data.username, role: data.role }
       setAuth(a)
@@ -118,6 +129,7 @@ export default function App() {
     <AuthCtx.Provider value={value}>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/profile" element={<Protected><Profile /></Protected>} />
         <Route path="/" element={<Protected><Dashboard /></Protected>} />
         <Route path="/alerts" element={<Protected><Alerts /></Protected>} />
         <Route path="/alerts/:id" element={<Protected><RiskDetail mode="alert" /></Protected>} />
@@ -125,7 +137,7 @@ export default function App() {
         <Route path="/reports" element={<Protected><Reports /></Protected>} />
         <Route path="/evaluation" element={<Protected><Evaluation /></Protected>} />
         <Route path="/telemetry" element={<Protected><Telemetry /></Protected>} />
-        <Route path="/accounts" element={<Protected><Accounts /></Protected>} />
+        <Route path="/accounts" element={<Protected><AdminOnly><Accounts /></AdminOnly></Protected>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AuthCtx.Provider>

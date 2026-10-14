@@ -7,13 +7,13 @@ import json
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from . import ai, config
@@ -24,11 +24,13 @@ from .models import (
     RuleConfig, Subject, User, utcnow,
 )
 from .pipeline import current_risk, dataset_end, ingest_records, load_config, reprocess_users
+from .reports import router as reports_router
 from .security import (
     ROLES, audit, create_token, get_current_user, hash_password, require_admin, require_staff, verify_password,
 )
 
 router = APIRouter(prefix="/api")
+router.include_router(reports_router)
 
 # --------------------------------------------------------------------------- helpers
 _login_failures: dict[str, list[float]] = defaultdict(list)
@@ -79,7 +81,7 @@ def _after_ingest(res: dict, db: Session, bg: BackgroundTasks) -> dict:
 # --------------------------------------------------------------------------- auth
 class AccountIn(BaseModel):
     username: str = Field(min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
-    password: str = Field(min_length=10, max_length=72)
+    password: str
     role: str
 
 
@@ -105,25 +107,87 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
 
 @router.get("/auth/me")
 def me(user: User = Depends(get_current_user)):
-    return {"username": user.username, "role": user.role}
+    return {"username": user.username, "role": user.role, "created_at": _iso(user.created_at)}
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/auth/change-password")
+def change_password(body: ChangePasswordIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    key = f"pw:{user.username.lower()}"
+    now = time.time()
+    recent = [attempt for attempt in _login_failures[key] if now - attempt < LOCK_WINDOW]
+    _login_failures[key] = recent
+    if len(recent) >= LOCK_AFTER:
+        raise HTTPException(429, "Too many failed attempts. Try again later.")
+    if not verify_password(body.current_password, user.password_hash):
+        _login_failures[key].append(now)
+        audit(db, user, "change_password_failed", user.username)
+        db.commit()
+        raise HTTPException(400, "Current password is incorrect")
+    if body.new_password == body.current_password:
+        raise HTTPException(422, "New password must differ from the current password")
+    user.password_hash = hash_password(body.new_password, user.username)
+    audit(db, user, "change_password", user.username)
+    db.commit()
+    _login_failures.pop(key, None)
+    return {"access_token": create_token(user), "token_type": "bearer"}
 
 
 @router.get("/auth/accounts")
 def list_accounts(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    return [{"username": user.username, "role": user.role, "created_at": _iso(user.created_at)}
-            for user in db.scalars(select(User).order_by(User.username))]
+    return [{"id": user.id, "username": user.username, "role": user.role, "created_at": _iso(user.created_at)}
+            for user in db.scalars(select(User).order_by(User.created_at, User.id))]
 
 
 @router.post("/auth/accounts", status_code=201)
 def create_account(body: AccountIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     if body.role not in ROLES:
         raise HTTPException(422, f"role must be one of {ROLES}")
-    if db.scalar(select(User).where(User.username == body.username)):
+    if db.scalar(select(User).where(func.lower(User.username) == body.username.lower())):
         raise HTTPException(409, "username already exists")
-    db.add(User(username=body.username, password_hash=hash_password(body.password), role=body.role))
+    db.add(User(username=body.username, password_hash=hash_password(body.password, body.username), role=body.role))
     audit(db, admin, "create_account", body.username, {"role": body.role})
     db.commit()
     return {"username": body.username, "role": body.role}
+
+
+class ResetPasswordIn(BaseModel):
+    new_password: str
+
+
+@router.delete("/auth/accounts/{account_id}")
+def delete_account(account_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    admins = list(db.scalars(select(User).where(User.role == "admin").with_for_update()))
+    target = db.get(User, account_id)
+    if target is None:
+        raise HTTPException(404, "Account not found")
+    if target.role == "admin" and len(admins) <= 1:
+        raise HTTPException(409, "Cannot delete the last remaining administrator")
+    if target.id == admin.id:
+        raise HTTPException(409, "Cannot delete your own account")
+    username = target.username
+    audit(db, admin, "delete_account", username, {"role": target.role})
+    db.delete(target)
+    db.commit()
+    return {"deleted": username}
+
+
+@router.post("/auth/accounts/{account_id}/reset-password")
+def reset_account_password(account_id: int, body: ResetPasswordIn, db: Session = Depends(get_db),
+                           admin: User = Depends(require_admin)):
+    target = db.get(User, account_id)
+    if target is None:
+        raise HTTPException(404, "Account not found")
+    if target.id == admin.id:
+        raise HTTPException(409, "Cannot reset your own password here; use self-service password change")
+    target.password_hash = hash_password(body.new_password, target.username)
+    audit(db, admin, "reset_password", target.username, {"role": target.role})
+    db.commit()
+    return {"reset": target.username}
 
 
 # --------------------------------------------------------------------------- telemetry ingestion (3.1)
@@ -282,7 +346,11 @@ def user_activity(user_id: str, days: int = Query(30, le=120), db: Session = Dep
 # --------------------------------------------------------------------------- alerts & cases
 @router.get("/alerts")
 def list_alerts(status: str | None = None, category: str | None = None, department: str | None = None,
-                user_id: str | None = None, limit: int = Query(200, le=1000), db: Session = Depends(get_db),
+                user_id: str | None = None, limit: int = Query(200, ge=1, le=1000),
+                sort_by: Literal['id', 'user_id', 'department', 'start_time', 'peak_score', 'category', 'status', 'indicator_count'] = 'peak_score',
+                sort_dir: Literal['asc', 'desc'] = 'desc',
+                then_by: Literal['id', 'user_id', 'department', 'start_time', 'peak_score', 'category', 'status', 'indicator_count', ''] | None = Query('start_time', description='Secondary column; empty disables secondary sorting'),
+                then_dir: Literal['asc', 'desc'] = 'desc', db: Session = Depends(get_db),
                 user: User = Depends(require_staff)):
     q = select(Alert, Subject.department).join(Subject, Subject.user_id == Alert.user_id)
     if status:
@@ -293,7 +361,35 @@ def list_alerts(status: str | None = None, category: str | None = None, departme
         q = q.where(Subject.department == department)
     if user_id:
         q = q.where(Alert.user_id == user_id)
-    rows = db.execute(q.order_by(Alert.peak_score.desc(), Alert.start_time.desc()).limit(limit)).all()
+    severity = {'Low': 0, 'Medium': 1, 'High': 2, 'Critical': 3}
+    workflow = {'open': 0, 'under_investigation': 1, 'closed': 2}
+    columns = {
+        'id': Alert.id, 'user_id': Alert.user_id, 'department': Subject.department,
+        'start_time': Alert.start_time, 'peak_score': Alert.peak_score,
+        'category': case(severity, value=Alert.category, else_=-1),
+        'status': case(workflow, value=Alert.status, else_=-1),
+    }
+    ordering = [(sort_by, sort_dir)] + ([(then_by, then_dir)] if then_by else [])
+    if any(key == 'indicator_count' for key, _ in ordering):
+        # JSON array length is not portable across the supported SQL backends.
+        rows = db.execute(q.order_by(Alert.id.asc())).all()
+        def value(row, key):
+            alert, dept = row
+            if key == 'indicator_count':
+                return len(alert.breakdown or [])
+            if key == 'department':
+                return dept or ''
+            if key == 'category':
+                return severity.get(alert.category, -1)
+            if key == 'status':
+                return workflow.get(alert.status, -1)
+            return getattr(alert, key)
+        for key, direction in reversed(ordering):
+            rows.sort(key=lambda row: value(row, key), reverse=direction == 'desc')
+        rows = rows[:limit]
+    else:
+        expressions = [(columns[key].desc() if direction == 'desc' else columns[key].asc()) for key, direction in ordering]
+        rows = db.execute(q.order_by(*expressions, Alert.id.asc()).limit(limit)).all()
     return [_alert_dict(a, d) for a, d in rows]
 
 
@@ -395,52 +491,6 @@ def dashboard_summary(db: Session = Depends(get_db), user: User = Depends(requir
     }
 
 
-@router.get("/reports/risk")
-def risk_report(start: datetime | None = None, end: datetime | None = None, department: str | None = None,
-                format: str = Query("json", pattern="^(json|csv)$"), db: Session = Depends(get_db),
-                user: User = Depends(require_staff)):
-    """Structured report of coverage and risk findings for a period/department (REQ-09-05)."""
-    subs = {s.user_id: s for s in db.scalars(select(Subject))}
-    q = select(Alert)
-    if start:
-        q = q.where(Alert.start_time >= start)
-    if end:
-        q = q.where(Alert.start_time <= end)
-    alerts = [a for a in db.scalars(q.order_by(Alert.peak_score.desc()))
-              if not department or subs.get(a.user_id) and subs[a.user_id].department == department]
-    eq = select(func.count()).select_from(Event)
-    if start:
-        eq = eq.where(Event.timestamp >= start)
-    if end:
-        eq = eq.where(Event.timestamp <= end)
-    if department:
-        eq = eq.where(Event.department == department)
-    rows = [{
-        "alert_id": a.id, "user_id": a.user_id, "department": subs[a.user_id].department if a.user_id in subs else "",
-        "start_time": _iso(a.start_time), "peak_score": a.peak_score, "category": a.category, "status": a.status,
-        "indicators": "; ".join(f"{b['name']}({b['weight']:g})" for b in a.breakdown or []),
-    } for a in alerts]
-    audit(db, user, "generate_report", department or "all", {"format": format, "alerts": len(rows)})
-    db.commit()
-    if format == "csv":
-        buf = io.StringIO()
-        w = csv.DictWriter(buf, fieldnames=list(rows[0].keys()) if rows else ["alert_id"])
-        w.writeheader()
-        w.writerows(rows)
-        return Response(buf.getvalue(), media_type="text/csv",
-                        headers={"Content-Disposition": "attachment; filename=insiderguard_risk_report.csv"})
-    cats: dict = defaultdict(int)
-    for r in rows:
-        cats[r["category"]] += 1
-    return {
-        "generated_at": _iso(utcnow()), "filters": {"start": _iso(start), "end": _iso(end), "department": department},
-        "coverage": {"events_analysed": db.scalar(eq), "users_monitored": len([s for s in subs.values()
-                     if not department or s.department == department]),
-                     "baselines_established": len([s for s in subs.values() if s.baseline_status == "established"
-                                                   and (not department or s.department == department)])},
-        "alerts_by_category": dict(cats), "alerts": rows,
-        "disclaimer": "Risk scores are investigative leads only and are not proof of malicious intent.",
-    }
 
 
 # --------------------------------------------------------------------------- honeytokens (3.6)
@@ -496,17 +546,50 @@ class RulesIn(BaseModel):
     values: dict[str, float]
 
 
+class RuleIn(BaseModel):
+    key: str = Field(min_length=1, max_length=48, pattern=r"^[a-z][a-z0-9_]*$")
+    description: str = Field(min_length=1, max_length=256, pattern=r"\S")
+    value: float = Field(ge=0, le=1_000_000, allow_inf_nan=False)
+
+
 @router.get("/rules")
 def get_rules(db: Session = Depends(get_db), user: User = Depends(require_staff)):
-    return [{"key": r.key, "value": r.value, "default": config.DEFAULT_RULES[r.key][0],
+    return [{"key": r.key, "value": r.value, "default": config.DEFAULT_RULES[r.key][0] if r.key in config.DEFAULT_RULES else None,
+             "built_in": r.key in config.DEFAULT_RULES,
              "description": r.description, "updated_by": r.updated_by, "updated_at": _iso(r.updated_at)}
-            for r in db.scalars(select(RuleConfig).order_by(RuleConfig.key)) if r.key in config.DEFAULT_RULES]
+            for r in db.scalars(select(RuleConfig).order_by(RuleConfig.key))]
+
+
+@router.post("/rules", status_code=201)
+def create_rule(body: RuleIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    if db.get(RuleConfig, body.key) is not None or body.key in config.DEFAULT_RULES:
+        raise HTTPException(409, "A rule with this parameter already exists")
+    row = RuleConfig(key=body.key, description=body.description.strip(), value=body.value,
+                     updated_by=admin.username, updated_at=utcnow())
+    db.add(row)
+    audit(db, admin, "create_rule", body.key, {"description": row.description, "value": row.value})
+    db.commit()
+    return {"key": row.key, "description": row.description, "value": row.value, "built_in": False}
+
+
+@router.delete("/rules/{key}")
+def delete_rule(key: str, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    row = db.get(RuleConfig, key)
+    if row is None:
+        raise HTTPException(404, "Rule not found")
+    if key in config.DEFAULT_RULES:
+        raise HTTPException(409, "Built-in engine parameters cannot be removed")
+    audit(db, admin, "delete_rule", key, {"description": row.description, "value": row.value})
+    db.delete(row)
+    db.commit()
+    return {"deleted": key}
 
 
 @router.put("/rules")
 def update_rules(body: RulesIn, background: BackgroundTasks, db: Session = Depends(get_db),
                  admin: User = Depends(require_admin)):
-    unknown = [k for k in body.values if k not in config.DEFAULT_RULES]
+    known = {r.key for r in db.scalars(select(RuleConfig))}
+    unknown = [k for k in body.values if k not in known]
     if unknown:
         raise HTTPException(422, f"Unknown rule keys: {unknown}")
     bad = [k for k, v in body.values.items() if v != v or v < 0 or v > 1_000_000]
@@ -520,7 +603,7 @@ def update_rules(body: RulesIn, background: BackgroundTasks, db: Session = Depen
             row.value, row.updated_by, row.updated_at = val, admin.username, utcnow()
     audit(db, admin, "modify_rules", "rule_config", changes)
     db.commit()
-    if changes:
+    if any(key in config.DEFAULT_RULES for key in changes):
         reprocess_users(db)  # thresholds changed -> rescore everyone (REQ-07-04)
     return {"changed": changes}
 

@@ -30,12 +30,33 @@ Development accounts (seeded only when `INSIDERGUARD_ENV != production`; overrid
 
 | Role    | Username  | Password         | Can do |
 |---------|-----------|------------------|--------|
-| admin   | `admin`   | `Admin#12345`    | everything: ingest, honeytokens, rule thresholds, audit log |
-| analyst | `analyst` | `Analyst#12345`  | dashboard, alerts, cases/notes, AI explanation, reports, evaluation |
+| admin   | `admin`   | `Guard#12345`    | everything: ingest, honeytokens, rule thresholds, audit log |
+| analyst | `analyst` | `Review#12345`   | dashboard, alerts, cases/notes, AI explanation, reports, evaluation |
 
 **Change these before exposing the service anywhere.** In production, set `INSIDERGUARD_ENV=production`
 and `INSIDERGUARD_SECRET_KEY` (the app refuses to start without it), and set `DATABASE_URL` for PostgreSQL
 (e.g. `postgresql+psycopg://user:pw@host/insiderguard`; install `psycopg[binary]`).
+
+### Production Administrator Bootstrap
+
+From `backend`, with the production `DATABASE_URL`, `INSIDERGUARD_ENV=production` and
+`INSIDERGUARD_SECRET_KEY` configured, run `python -m app.create_admin`. Enter the username,
+password, and password confirmation at the hidden prompts. Existing usernames are rejected
+case-insensitively. Production startup and data seeding do not create default accounts.
+
+Passwords require at least 10 characters, at most 72 UTF-8 bytes, a letter and a digit, and
+must not contain the username (case-insensitive). The new development defaults above apply
+only to freshly seeded accounts; existing passwords are unchanged.
+
+Administrators manage accounts at `/accounts`. Password resets invalidate the target's
+existing sessions. The token fingerprint also requires users to sign in again after upgrading
+from tokens issued before this feature. All users must sign in once after this deploy because
+tokens now require the `pwv` password fingerprint claim. Every user can change their own
+password at `/profile`; the current browser receives a fresh token while all older tokens
+for that user stop working. Incorrect current-password attempts are limited to five per
+15 minutes per user, independently of login attempts (in memory per server process).
+The last administrator and your own account cannot
+be deleted; your own password cannot be reset through administrator account management.
 
 ### Optional Generative AI explanations
 Set `AI_API_KEY` (and optionally `AI_API_URL`, `AI_MODEL`). Defaults target the Anthropic Messages API. Only an
@@ -77,6 +98,15 @@ bytes→MB are normalized; bad rows are rejected with structured per-field error
 `GET /api/alerts` · `GET /api/dashboard/summary` · `POST /api/honeytokens` · `GET /api/evaluation/results`
 — plus auth, users list, alert detail/status/notes/explain, honeytoken list/revoke, rules, reports, audit,
 parse-errors, evaluation run. Interactive docs at `/docs`.
+
+### Report Filters
+
+`/api/reports/risk` accepts date-only `start` / `end` values (`YYYY-MM-DD`); the end day is
+included in full, using an exclusive next-day UTC boundary. Category and status accept
+comma-separated lists. Score range, exact user ID, indicator, sorting, grouping, and top-N
+filters apply equally to JSON and CSV. Summaries, charts, and groups cover all matching
+alerts; `limit` caps the detail rows and CSV only. `/api/reports/range` exposes the dataset's
+event dates for presets, and `/api/reports/indicators` lists available indicator names.
 
 ## Reference result (seed 42, 30 users, 49 days, 20 labelled scenarios)
 
