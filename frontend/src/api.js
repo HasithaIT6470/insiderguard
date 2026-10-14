@@ -49,6 +49,8 @@ async function request(path, { method = 'GET', body, form, raw } = {}) {
 }
 
 export const api = {
+  accounts: () => request('/auth/accounts'),
+  createAccount: (body) => request('/auth/accounts', { method: 'POST', body }),
   login: async (username, password) => {
     const form = new URLSearchParams({ username, password })
     const res = await fetch('/api/auth/login', { method: 'POST', body: form })

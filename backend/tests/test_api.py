@@ -22,6 +22,16 @@ def test_structured_error_for_invalid_events(client, admin):
     assert errs and errs[0]["errors"]
 
 
+def test_list_accounts_admin_only(client, admin, analyst):
+    assert client.get("/api/auth/accounts").status_code == 401
+    assert client.get("/api/auth/accounts", headers=analyst).status_code == 403
+    response = client.get("/api/auth/accounts", headers=admin)
+    assert response.status_code == 200
+    accounts = response.json()
+    assert {account["username"] for account in accounts} >= {"admin", "analyst"}
+    assert all(set(account) == {"username", "role", "created_at"} for account in accounts)
+
+
 def test_full_flow_ingest_score_case_and_evaluate(client, admin, analyst):
     events, honeytokens, _ = generate(seed=7, n_users=10, days=35, start=date(2026, 8, 3))
     for h in honeytokens:

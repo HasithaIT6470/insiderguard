@@ -108,6 +108,12 @@ def me(user: User = Depends(get_current_user)):
     return {"username": user.username, "role": user.role}
 
 
+@router.get("/auth/accounts")
+def list_accounts(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    return [{"username": user.username, "role": user.role, "created_at": _iso(user.created_at)}
+            for user in db.scalars(select(User).order_by(User.username))]
+
+
 @router.post("/auth/accounts", status_code=201)
 def create_account(body: AccountIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     if body.role not in ROLES:

@@ -23,7 +23,7 @@ export default function Evaluation() {
     labels: ['Precision', 'Recall', 'F1', 'False-positive rate'],
     datasets: Object.entries(modes).map(([m, v], i) => ({
       label: MODE_LABEL[m], data: [v.precision, v.recall, v.f1, v.false_positive_rate],
-      backgroundColor: ['#8d99ae', '#3a86ff', '#14213d'][i],
+      backgroundColor: ['#8d99ae', '#3a86ff', '#94bfff'][i],
     })),
   }
 
