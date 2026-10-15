@@ -292,6 +292,8 @@ event dates for presets, and `/api/reports/indicators` lists available indicator
 
 ## Reference result (seed 42, 30 users, 49 days, 20 labelled scenarios)
 
+These are historical results from before the registered-honeytoken correction below. Regenerate and rerun evaluation for current figures; the 15-user demo's actual metrics are in [DEMO_GUIDE.md](docs/DEMO_GUIDE.md).
+
 | Mode         | Precision | Recall | F1   | FPR   | Scenarios caught | Median latency |
 |--------------|-----------|--------|------|-------|------------------|----------------|
 | Rule-Only    | 0.71      | 0.34   | 0.47 | 0.6 % | 10 / 20          | 17 min         |
@@ -304,7 +306,7 @@ value of combining signals; they are **not** a claim about real-world accuracy.
 
 ## Tests
 ```bash
-cd backend && python -m pytest -q       # 15 tests: normalization, engines, scoring, API, RBAC, audit, cases
+cd backend && python -m pytest -q       # backend regressions, including both seeds
 cd frontend && npm test                 # component tests
 ```
 
@@ -360,3 +362,28 @@ Case and escalation delivery runs through their central event hooks. Delivery ke
 Processing defaults to `silent=True`: seeds, CLI processing, recompute and rule/baseline rescoring do not send notifications. Only live event ingestion opts in. Existing alerts changing score do not count as new alerts. A live run with up to ten newly created unassigned High/Critical alerts sends individual notifications; a larger run sends **one summary instead of individual items**. Detection, scoring, baseline and AI logic are unchanged.
 
 Admin notification requests lazily check for open High/Critical alerts created more than 24 hours ago without an owner. Each admin receives at most one reminder per alert, even after dismissing it. Retention deletes inbox rows older than 30 days, with a database-backed checkpoint allowing the unread-count endpoint to run cleanup at most once per hour. Delivery keys are retained to preserve deduplication; these contain account usernames and event/alert identifiers, not notification text or employee data.
+## Choose a seed: lab data or the 15-user live demo
+
+Only **one seed is active at a time** in a database. Both commands below target the same `DATABASE_URL` (by default `backend/insiderguard.db`). **`--reset` drops every table and wipes the selected database**, including accounts, case history, profiles and notifications. Back up the database before switching seeds. Stop the API while replacing its database, then restart it.
+
+From `backend/`, choose either:
+
+```powershell
+# Original labelled lab seed: unchanged generator and seed CLI
+./.venv/Scripts/python.exe -m app.seed --reset
+
+# Separate coherent 15-user demonstration; no network access needed
+./.venv/Scripts/python.exe -m app.seed_demo --reset
+
+# Reproduce a specific run, or check the active demo without resetting it
+./.venv/Scripts/python.exe -m app.seed_demo --reset --end 2026-10-09 --days 60 --seed 7
+./.venv/Scripts/python.exe -m app.seed_demo --verify-only
+```
+
+The new seed has exactly three monitored IDs per department, fictional `example.com` profiles, established baselines for fourteen users and one pending new hire, eight attack personas, legitimate noisy activity, all three case statuses, resolution/reopening history, all six escalation states, linked contact records and a small mostly-read inbox. It leaves u016 absent for live pre-registration. It uses the real importer, processing pipeline and case/escalation services; no scores or narratives are fabricated.
+
+The script writes [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md) from the actual run, including credentials, real case numbers, metrics, persona stories and a ten-minute walkthrough. Default end is the latest Friday on or before today in UTC; the final day's cutoff is midnight, so observed events never lie in the future. Supported durations are 45–120 days. Identical seed/end/duration yields identical telemetry and demo output; password hashing remains securely salted. Verification checks integrity, privacy, ground truth, risk spread and recompute stability, and exits nonzero with every problem found. Run it before making live demonstration changes.
+
+The primary admin and analyst use their configured development credentials; analyst2 uses `DemoReview#23456`, and analyst3 uses `DemoReview#34567`. These are demo-only passwords. The generated guide includes the configured credentials, so never generate a shared guide using production secrets. `--with-ai` requests real explanations only when an AI key is configured; it is the only mode that needs network access.
+
+**Honeytoken scoring correction:** touching a registered honeytoken no longer also emits `novel_resource_category` solely because its decoy type was absent from the baseline. An isolated normal-hour touch now scores **50 rather than 68**. Other independently valid indicators still contribute normally. This small engine fix affects both seeds, so risk scores and lab evaluation numbers have changed; regenerate/recompute and rerun evaluation when comparing with older results. No other detection or scoring logic changed.

@@ -94,3 +94,16 @@ def test_score_breakdown_has_one_entry_per_category():
     score, breakdown = score_window(inds, inds[-1].time, "hybrid", CFG)
     cats = [b["category"] for b in breakdown if b["category"] != "correlation"]
     assert len(cats) == len(set(cats)) and score == min(100.0, sum(b["weight"] for b in breakdown))
+
+
+def test_registered_honeytoken_does_not_also_count_as_a_novel_resource():
+    events = history(20)
+    when = T0 + timedelta(days=20, hours=2)
+    events.append(ev(9901, when, 'file_access', resource='/decoy/registered', resource_type='decoy'))
+    baseline = compute_baseline(pd.DataFrame(events), CFG)
+    indicators = detect_user(events, baseline, {'/decoy/registered'}, CFG)
+    assert [i.name for i in indicators if i.event_id == 9901] == ['honeytoken_interaction']
+    assert build_series(indicators, 'hybrid', CFG)[-1][1] == 50
+    # The resource-category anomaly remains valid for an unregistered resource.
+    indicators = detect_user(events, baseline, set(), CFG)
+    assert any(i.event_id == 9901 and i.name == 'novel_resource_category' for i in indicators)

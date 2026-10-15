@@ -324,3 +324,10 @@ class NotificationMaintenance(Base):
     __tablename__ = "notification_maintenance"
     key = Column(String(32), primary_key=True)
     last_run = Column(DateTime, nullable=False)
+
+
+class DemoSeedRun(Base):
+    __tablename__ = "demo_seed_runs"
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime, nullable=False)
+    manifest = Column(JSON, nullable=False)

@@ -233,7 +233,7 @@ def detect_user(events: list[dict], baseline: dict | None, honeytokens: set[str]
             add(e, "anomaly", "device", "unknown_device", 12, metric="device_usage", observed=dev,
                 baseline_devices=sorted(known_dev))
         rtype = e.get("resource_type")
-        if et in ("file_access", "download") and rtype and rtype not in known_types and ("rt", rtype, day) not in flagged:
+        if et in ("file_access", "download") and e.get("resource") not in honeytokens and rtype and rtype not in known_types and ("rt", rtype, day) not in flagged:
             flagged.add(("rt", rtype, day))
             add(e, "anomaly", "resource", "novel_resource_category", 8, metric="resource_type", observed=rtype,
                 baseline_types=sorted(known_types))
