@@ -6,7 +6,7 @@ import { api } from '../api'
 const auth = vi.hoisted(() => ({ role: 'analyst' }))
 vi.mock('../App.jsx', () => ({ useAuth: () => ({ auth }) }))
 vi.mock('../userCharts.jsx', () => ({ UserChart: ({ title }) => <div>{title}</div> }))
-vi.mock('../api', () => ({ api: { users: vi.fn(), usersStats: vi.fn(), adminEmployees: vi.fn(), createEmployee: vi.fn(), importEmployees: vi.fn() } }))
+vi.mock('../api', () => ({ api: { users: vi.fn(), usersStats: vi.fn(), adminEmployees: vi.fn(), createEmployee: vi.fn(), importEmployees: vi.fn(), removeUser: vi.fn() } }))
 beforeEach(() => {
   vi.clearAllMocks(); auth.role = 'analyst'
   HTMLDialogElement.prototype.showModal = vi.fn(function () { this.setAttribute('open', '') })
@@ -17,11 +17,13 @@ beforeEach(() => {
 })
 const mount = () => render(<MemoryRouter><Routes><Route path="/" element={<Users />} /><Route path="/users/:id" element={<p>Opened profile</p>} /></Routes></MemoryRouter>)
 
-it('shows staff charts and linked IDs without requesting directory data for analysts', async () => {
+it('shows linked IDs without landing charts without requesting directory data for analysts', async () => {
   mount()
   expect(await screen.findByRole('link', { name: 'log.id' })).toHaveAttribute('href', '/users/log.id')
-  expect(screen.getByText('Users by department')).toBeInTheDocument()
-  expect(screen.getByText('Risk distribution')).toBeInTheDocument()
+  expect(screen.queryByText('Users by department')).not.toBeInTheDocument()
+  expect(api.usersStats).not.toHaveBeenCalled()
+  expect(screen.queryByRole('button', { name: /Remove user/ })).not.toBeInTheDocument()
+  expect(screen.queryByText('Risk distribution')).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Add employee profile' })).not.toBeInTheDocument()
   expect(api.adminEmployees).not.toHaveBeenCalled()
   fireEvent.keyDown(screen.getByRole('row', { name: 'View user log.id' }), { key: 'Enter' })
@@ -31,7 +33,8 @@ it('shows staff charts and linked IDs without requesting directory data for anal
 it('offers admin controls, includes preregistrations, and filters missing profiles', async () => {
   auth.role = 'admin'; mount()
   expect(await screen.findByRole('link', { name: 'preregistered' })).toHaveAttribute('href', '/users/preregistered')
-  expect(screen.getByRole('link', { name: 'Download CSV template' })).toHaveAttribute('download', 'employee-directory-template.csv')
+  expect(screen.queryByText('Download CSV template')).not.toBeInTheDocument()
+  expect(screen.queryByLabelText('Import directory (CSV)')).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: /1 users missing contact details/ }))
   expect(screen.queryByRole('link', { name: 'preregistered' })).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: 'Add employee profile' }))
@@ -43,10 +46,21 @@ it('offers admin controls, includes preregistrations, and filters missing profil
   await waitFor(() => expect(api.createEmployee).toHaveBeenCalledWith(expect.objectContaining({ user_id: 'new.log.id', employment_status: 'active' })))
 })
 
-it('shows import row errors and refreshes the directory after upload', async () => {
+it('confirms removal without navigating and refreshes the list', async () => {
   auth.role = 'admin'; mount()
-  api.importEmployees.mockResolvedValue({ accepted: 1, rejected: 1, errors: [{ row: 3, message: 'email: invalid email address' }] })
-  fireEvent.change(screen.getByLabelText('Import directory (CSV)'), { target: { files: [new File(['csv'], 'directory.csv', { type: 'text/csv' })] } })
-  expect(await screen.findByText('Row 3: email: invalid email address')).toBeInTheDocument()
-  expect(api.importEmployees).toHaveBeenCalled()
+  fireEvent.click(await screen.findByRole('button', { name: 'Remove user log.id' }))
+  expect(screen.getByRole('dialog', { name: 'Remove user log.id' })).toBeInTheDocument()
+  expect(api.removeUser).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Remove user log.id' }))
+  api.removeUser.mockRejectedValueOnce(new Error('Removal failed'))
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm removal' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Removal failed')
+  api.users.mockResolvedValue([])
+  api.removeUser.mockResolvedValue({ removed: true })
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm removal' }))
+  await waitFor(() => expect(screen.queryByRole('link', { name: 'log.id' })).not.toBeInTheDocument())
+  expect(api.removeUser).toHaveBeenCalledWith('log.id')
+  expect(screen.queryByText('Opened profile')).not.toBeInTheDocument()
 })

@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .database import get_db
-from .models import EmployeeContact, EmployeeProfile, Subject, User, utcnow
+from .models import EmployeeContact, EmployeeProfile, Subject, User, UserDirectoryRemoval, utcnow
 from .security import audit, require_admin
 
 router = APIRouter(prefix="/admin/employees")
@@ -106,8 +106,9 @@ def save(db, actor, values, row=None):
 
 @router.get("")
 def directory(db: Session = Depends(get_db), user: User = Depends(require_admin)):
-    profiles = db.scalars(select(EmployeeProfile).order_by(EmployeeProfile.user_id)).all()
-    subjects = db.scalars(select(Subject)).all()
+    removed = select(UserDirectoryRemoval.user_id)
+    profiles = db.scalars(select(EmployeeProfile).where(EmployeeProfile.user_id.not_in(removed)).order_by(EmployeeProfile.user_id)).all()
+    subjects = db.scalars(select(Subject).where(Subject.user_id.not_in(removed))).all()
     ids = {p.user_id for p in profiles}
     missing = sorted(s.user_id for s in subjects if s.user_id not in ids)
     audit(db, user, "view_employee_directory")
@@ -221,3 +222,15 @@ def add_contact(user_id: str, payload: dict = Body(...), db: Session = Depends(g
     audit(db, user, "add_employee_contact", user_id, {"method": method, "summary_length": len(summary)})
     db.commit()
     return contact_dict(row)
+
+
+@router.post("/{user_id}/remove")
+def remove_user(user_id: str, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    if db.get(UserDirectoryRemoval, user_id) is not None:
+        return {"user_id": user_id, "removed": True}
+    if db.get(Subject, user_id) is None and db.scalar(select(EmployeeProfile.id).where(EmployeeProfile.user_id == user_id)) is None:
+        raise HTTPException(404, "Unknown user")
+    db.add(UserDirectoryRemoval(user_id=user_id, removed_by=user.username))
+    audit(db, user, "remove_directory_user", user_id, {"history_retained": True})
+    db.commit()
+    return {"user_id": user_id, "removed": True}

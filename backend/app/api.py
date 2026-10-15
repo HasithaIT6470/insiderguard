@@ -284,11 +284,11 @@ def list_users(department: str | None = None, db: Session = Depends(get_db), use
     """Ranked list of users by current risk score and category (REQ-09-01)."""
     cfg = load_config(db)
     risk = current_risk(db, cfg)
-    from .models import EmployeeProfile
+    from .models import EmployeeProfile, UserDirectoryRemoval
     profile_ids = set(db.scalars(select(EmployeeProfile.user_id)))
     open_alerts = dict(db.execute(select(Alert.user_id, func.count()).where(Alert.status != "closed").group_by(Alert.user_id)).all())
     out = []
-    for s in db.scalars(select(Subject)):
+    for s in db.scalars(select(Subject).where(Subject.user_id.not_in(select(UserDirectoryRemoval.user_id)))):
         if department and s.department != department:
             continue
         r = risk.get(s.user_id)

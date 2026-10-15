@@ -168,3 +168,29 @@ def test_personal_markers_never_leak_to_staff_endpoints_or_audit(client, admin, 
         assert not any(marker in str([r.detail for r in db.scalars(select(AuditLog))]) for marker in markers)
         from app.ai import anonymize_alert
         assert not any(marker in str(anonymize_alert(db.get(Alert, alert_id))) for marker in markers)
+
+
+def test_remove_directory_user_admin_only_and_retains_history(client, admin, analyst):
+    from app.models import UserDirectoryRemoval
+    user_id = uid()
+    with SessionLocal() as db:
+        db.add(Subject(user_id=user_id, department="Engineering"))
+        db.commit()
+    path = f"/api/admin/employees/{user_id}/remove"
+    assert client.post(path, headers=analyst).status_code == 403
+    assert any(row["user_id"] == user_id for row in client.get("/api/users", headers=analyst).json())
+    assert client.post(path, headers=admin).json() == {"user_id": user_id, "removed": True}
+    assert client.post(path, headers=admin).status_code == 200
+    assert all(row["user_id"] != user_id for row in client.get("/api/users", headers=analyst).json())
+    assert user_id not in client.get("/api/admin/employees", headers=admin).json()["missing_profiles"]
+    with SessionLocal() as db:
+        assert db.get(Subject, user_id) is not None
+        assert db.get(UserDirectoryRemoval, user_id) is not None
+        logs = db.scalars(select(AuditLog).where(AuditLog.target == user_id, AuditLog.action == "remove_directory_user")).all()
+        assert len(logs) == 1 and logs[0].detail == {"history_retained": True}
+    registered = create(client, admin)["user_id"]
+    assert client.post(f"/api/admin/employees/{registered}/remove", headers=admin).status_code == 200
+    assert all(row["user_id"] != registered for row in client.get("/api/admin/employees", headers=admin).json()["profiles"])
+    with SessionLocal() as db:
+        assert db.scalar(select(EmployeeProfile).where(EmployeeProfile.user_id == registered)) is not None
+    assert client.post(f"/api/admin/employees/{uid()}/remove", headers=admin).status_code == 404

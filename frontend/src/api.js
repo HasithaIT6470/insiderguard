@@ -72,6 +72,7 @@ export const api = {
   users: (department) => request(`/users${department ? `?department=${encodeURIComponent(department)}` : ''}`),
   usersStats: () => request('/users/stats'),
   userOverview: (id) => request(`/users/${encodeURIComponent(id)}/overview`),
+  removeUser: (id) => request(`/admin/employees/${encodeURIComponent(id)}/remove`, { method: 'POST' }),
   adminEmployees: () => request('/admin/employees'),
   adminEmployee: (id) => request(`/admin/employees/${encodeURIComponent(id)}`),
   createEmployee: (body) => request('/admin/employees', { method: 'POST', body }),

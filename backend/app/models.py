@@ -331,3 +331,12 @@ class DemoSeedRun(Base):
     id = Column(Integer, primary_key=True)
     created_at = Column(DateTime, nullable=False)
     manifest = Column(JSON, nullable=False)
+
+
+class UserDirectoryRemoval(Base):
+    """Directory visibility only; evidence and employee profiles remain intact."""
+
+    __tablename__ = "user_directory_removals"
+    user_id = Column(String(64), primary_key=True)
+    removed_by = Column(String(64), nullable=False)
+    removed_at = Column(DateTime, nullable=False, default=utcnow)
