@@ -98,3 +98,39 @@ it('preserves the returned server order instead of re-sorting the loaded subset'
   await screen.findByRole('link', { name: 'Alert #2', exact: true })
   expect(screen.getAllByRole('link', { name: /^Alert #/ }).map(link => link.textContent)).toEqual(['Alert #2', 'Alert #1'])
 })
+
+const bruteForce = { id: 'T1110', name: 'Brute Force', tactics: [{ id: 'TA0006', name: 'Credential Access' }], url: 'https://attack.mitre.org/techniques/T1110/', confidence: 'high' }
+const collection = { id: 'T1039', name: 'Data from Network Shared Drive', tactics: [{ id: 'TA0009', name: 'Collection' }], url: 'https://attack.mitre.org/techniques/T1039/', confidence: 'medium' }
+
+function mappedAlerts() {
+  return [bruteForce, collection].map((technique, index) => ({ id: index + 1, user_id: `user-${index + 1}`,
+    department: 'Finance', peak_score: 50, category: 'High', status: 'open',
+    start_time: '2026-10-01T10:00:00', attack: { techniques: [technique] },
+    breakdown: [{ name: index ? 'bulk_download' : 'failed_logon_burst', attack: [technique] },
+      { name: 'another_indicator', attack: [technique] }] }))
+}
+
+it.each(['T1110', 'Brute Force', 'Credential Access'])('searches ATT&CK context by %s', async query => {
+  api.alerts.mockResolvedValue(mappedAlerts())
+  render(<MemoryRouter><Alerts /></MemoryRouter>)
+  await screen.findByRole('link', { name: 'Alert #2', exact: true })
+  fireEvent.change(screen.getByLabelText('Search alerts'), { target: { value: query } })
+  expect(screen.getByRole('link', { name: 'Alert #1', exact: true })).toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: 'Alert #2', exact: true })).not.toBeInTheDocument()
+  expect(screen.getAllByRole('link', { name: /T1110 · Brute Force/ })).toHaveLength(1)
+})
+
+it('filters tactics locally and clears the selection without changing API parameters', async () => {
+  api.alerts.mockResolvedValue(mappedAlerts())
+  render(<MemoryRouter><Alerts /></MemoryRouter>)
+  await screen.findByRole('link', { name: 'Alert #2', exact: true })
+  const calls = api.alerts.mock.calls.length
+  fireEvent.change(screen.getByLabelText('ATT&CK tactic'), { target: { value: 'TA0006' } })
+  expect(screen.getByRole('link', { name: 'Alert #1', exact: true })).toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: 'Alert #2', exact: true })).not.toBeInTheDocument()
+  expect(api.alerts.mock.calls.length).toBe(calls)
+  fireEvent.click(screen.getAllByRole('button', { name: 'Clear filters' })[0])
+  expect(screen.getByLabelText('ATT&CK tactic')).toHaveValue('')
+  expect(screen.getByRole('link', { name: 'Alert #2', exact: true })).toBeInTheDocument()
+  expect(api.alerts).toHaveBeenLastCalledWith({ limit: 1000, sort_by: 'peak_score', sort_dir: 'desc', then_by: 'start_time', then_dir: 'desc' })
+})

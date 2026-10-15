@@ -21,6 +21,12 @@
   --ig-high: #d9480f;
   --ig-critical: #b00020;
 }
+.attack-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; vertical-align: middle; }
+.attack-chip { display: inline-block; padding: 3px 6px; border: 1px solid #6597e2; border-radius: 4px; background: #203559; color: #c1d9ff; font-size: .72rem; font-weight: 650; line-height: 1.3; white-space: nowrap; text-decoration: none; }
+a.attack-chip:hover { background: #2b4879; color: #fff; text-decoration: underline; }
+a.attack-chip:focus-visible { outline: 2px solid #93beff; outline-offset: 2px; }
+.attack-mapping { overflow-wrap: anywhere; }
+.alerts-indicators > .attack-chips { display: flex; margin-top: 5px; }
 body { background: #17191d; color: #e4e7ec; }
 .ig-sidebar { position: fixed; inset: 0 auto 0 0; width: 252px; display: flex; flex-direction: column; background: #101215; border-right: 1px solid #30343b; z-index: 1040; overflow-y: auto; color: #fff; }
 .ig-brand { display: flex; align-items: center; gap: 10px; color: #eef1f7; font-size: 1.2rem; font-weight: 750; text-decoration: none; }

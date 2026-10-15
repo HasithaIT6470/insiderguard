@@ -49,3 +49,18 @@ export function Status({ loading, error, children }) {
 export const STATUS_LABEL = { open: 'Open', under_investigation: 'Under investigation', closed: 'Closed' }
 
 export const DISCLAIMER = 'Risk scores are investigative leads only and are not proof of malicious intent.'
+
+export function AttackChip({ technique }) {
+  if (!technique?.id) return null
+  const label = [technique.id, technique.name, ...(technique.tactics || []).map(t => t.name),
+    `confidence ${technique.confidence || 'unknown'}`].filter(Boolean).join(' · ')
+  return technique.url
+    ? <a className="attack-chip" href={technique.url} target="_blank" rel="noopener noreferrer" title={label} aria-label={label}>{technique.id}</a>
+    : <span className="attack-chip" title={label} aria-label={label}>{technique.id}</span>
+}
+
+export function AttackChips({ techniques }) {
+  return techniques?.length
+    ? <span className="attack-chips">{techniques.map(t => <AttackChip key={t.id} technique={t} />)}</span>
+    : <span className="text-muted">—</span>
+}

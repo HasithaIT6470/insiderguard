@@ -2,12 +2,17 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, Bell, CheckCheck, ChevronLeft, ChevronRight, RefreshCw, RotateCcw, Search, ShieldAlert } from 'lucide-react'
 import { api } from '../api'
-import { CategoryBadge, DISCLAIMER, ScoreBar, Status, STATUS_LABEL, fmt, useLoad } from '../components.jsx'
+import { AttackChips, CategoryBadge, DISCLAIMER, ScoreBar, Status, STATUS_LABEL, fmt, useLoad } from '../components.jsx'
 
 const PAGE_SIZE = 20
 const LIMIT = 1000
 const SORT_COLUMNS = { id: 'Alert ID', user_id: 'User', department: 'Department', start_time: 'Started', peak_score: 'Peak score', category: 'Risk level', status: 'Case status', indicator_count: 'Indicator count' }
 const DEFAULT_SORT = { sort_by: 'peak_score', sort_dir: 'desc', then_by: 'start_time', then_dir: 'desc' }
+
+function alertTechniques(alert) {
+  const techniques = alert.attack?.techniques || (alert.breakdown || []).flatMap(b => b.attack || [])
+  return [...new Map(techniques.map(t => [t.id, t])).values()]
+}
 
 function SortHeader({ column, label, sort, onSort }) {
   const primary = sort.sort_by === column
@@ -20,11 +25,13 @@ function SortHeader({ column, label, sort, onSort }) {
 export default function Alerts() {
   const [searchParams, setSearchParams] = useSearchParams()
   const sort = Object.fromEntries(Object.entries(DEFAULT_SORT).map(([key, fallback]) => [key, searchParams.get(key) ?? fallback]))
-  const [filters, setFilters] = useState({ query: '', status: '', category: '', department: '' })
+  const [filters, setFilters] = useState({ query: '', status: '', category: '', department: '', tactic: '' })
   const { data, loading, error, reload } = useLoad(() => api.alerts({ limit: LIMIT, ...sort, ...(filters.status ? { status: filters.status } : {}), ...(filters.category ? { category: filters.category } : {}), ...(filters.department ? { department: filters.department } : {}) }), [sort.sort_by, sort.sort_dir, sort.then_by, sort.then_dir, filters.status, filters.category, filters.department])
   const [page, setPage] = useState(1)
   const [departments, setDepartments] = useState([])
   const alerts = data || []
+  const tactics = useMemo(() => [...new Map((data || []).flatMap(a => alertTechniques(a)
+    .flatMap(t => t.tactics || [])).map(t => [t.id, t])).values()].sort((a, b) => a.name.localeCompare(b.name)), [data])
   useEffect(() => { if (data) setDepartments(previous => [...new Set([...previous, ...data.map(a => a.department).filter(Boolean)])].sort()) }, [data])
   useEffect(() => { setPage(1) }, [sort.sort_by, sort.sort_dir, sort.then_by, sort.then_dir])
   const changeSort = updates => {
@@ -34,7 +41,14 @@ export default function Alerts() {
   const counts = useMemo(() => ({ open: alerts.filter(a => a.status === 'open').length, investigating: alerts.filter(a => a.status === 'under_investigation').length, closed: alerts.filter(a => a.status === 'closed').length, critical: alerts.filter(a => a.category === 'Critical').length }), [data])
   const filtered = useMemo(() => {
     const search = filters.query.trim().toLowerCase()
-    return (data || []).filter(a => (!filters.status || a.status === filters.status) && (!filters.category || a.category === filters.category) && (!filters.department || a.department === filters.department) && (!search || [a.id, a.user_id, a.department, ...(a.breakdown || []).map(b => b.name)].join(' ').toLowerCase().includes(search)))
+    return (data || []).filter(a => {
+      const techniques = alertTechniques(a)
+      return (!filters.status || a.status === filters.status) && (!filters.category || a.category === filters.category)
+        && (!filters.department || a.department === filters.department)
+        && (!filters.tactic || techniques.some(t => (t.tactics || []).some(tactic => tactic.id === filters.tactic)))
+        && (!search || [a.id, a.user_id, a.department, ...(a.breakdown || []).map(b => b.name),
+          ...techniques.flatMap(t => [t.id, t.name, ...(t.tactics || []).map(tactic => tactic.name)])].join(' ').toLowerCase().includes(search))
+    })
   }, [data, filters])
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const currentPage = Math.min(page, pages)
@@ -42,7 +56,7 @@ export default function Alerts() {
   const visible = filtered.slice(start, start + PAGE_SIZE)
   const hasFilters = Object.values(filters).some(Boolean)
   const updateFilter = (key, value) => { setFilters(previous => ({ ...previous, [key]: value })); setPage(1) }
-  const clearFilters = () => { setFilters({ query: '', status: '', category: '', department: '' }); setPage(1) }
+  const clearFilters = () => { setFilters({ query: '', status: '', category: '', department: '', tactic: '' }); setPage(1) }
 
   return <div className="dash-page alerts-page">
     <header className="dash-header">
@@ -64,6 +78,7 @@ export default function Alerts() {
           <div className="dash-panel-heading"><div><h2>Alert queue</h2><p>{alerts.length.toLocaleString()} loaded alerts</p></div>
           </div>
           <div className="dash-filters alerts-filters">
+            <select className="form-select form-select-sm" aria-label="ATT&CK tactic" value={filters.tactic} onChange={e => updateFilter('tactic', e.target.value)}><option value="">All ATT&CK tactics</option>{tactics.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
             <div className="dash-search"><Search size={17} aria-hidden="true" /><input className="form-control form-control-sm" aria-label="Search alerts" placeholder="Search alert, user or indicator" value={filters.query} onChange={e => updateFilter('query', e.target.value)} /></div>
             <select className="form-select form-select-sm" aria-label="Risk level" value={filters.category} onChange={e => updateFilter('category', e.target.value)}><option value="">All risk levels</option>{['Low', 'Medium', 'High', 'Critical'].map(c => <option key={c}>{c}</option>)}</select>
             <select className="form-select form-select-sm" aria-label="Case status" value={filters.status} onChange={e => updateFilter('status', e.target.value)}><option value="">All statuses</option>{Object.entries(STATUS_LABEL).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
@@ -84,7 +99,7 @@ export default function Alerts() {
               <td><ScoreBar score={a.peak_score} category={a.category} /></td><td><CategoryBadge category={a.category} /></td>
               <td><span className={`alerts-status alerts-status-${a.status}`}>{STATUS_LABEL[a.status] || a.status}</span></td>
               <td className="alerts-date">{fmt(a.start_time)}</td>
-              <td className="alerts-indicators">{(a.breakdown || []).length ? <><span className="text-muted">{a.breakdown.length} indicators</span><ul>{a.breakdown.slice(0, 3).map((b, i) => <li key={i}>{b.name}</li>)}</ul></> : <span className="text-muted">No indicators</span>}{a.breakdown?.length > 3 && <span className="text-muted">+{a.breakdown.length - 3} more</span>}</td>
+              <td className="alerts-indicators">{(a.breakdown || []).length ? <><span className="text-muted">{a.breakdown.length} indicators</span><ul>{a.breakdown.slice(0, 3).map((b, i) => <li key={i}>{b.name}</li>)}</ul></> : <span className="text-muted">No indicators</span>}{a.breakdown?.length > 3 && <span className="text-muted">+{a.breakdown.length - 3} more</span>}<AttackChips techniques={alertTechniques(a)} /></td>
               <td><Link className="dash-investigate" to={`/alerts/${a.id}`} aria-label={`Investigate alert ${a.id}`} title={`Investigate alert ${a.id}`}><ArrowRight size={18} aria-hidden="true" /></Link></td>
             </tr>)}</tbody>
           </table></div>
