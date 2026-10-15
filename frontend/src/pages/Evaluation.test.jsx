@@ -2,6 +2,9 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { api } from '../api'
 import Evaluation from './Evaluation.jsx'
 
+const authState = vi.hoisted(() => ({ role: 'admin' }))
+vi.mock('../App.jsx', () => ({ useAuth: () => ({ auth: authState }) }))
+
 vi.mock('../api', () => ({ api: { evaluation: vi.fn(), runEvaluation: vi.fn() } }))
 vi.mock('react-chartjs-2', () => ({ Bar: props => <div role="img" aria-label={props['aria-label']} /> }))
 
@@ -15,6 +18,7 @@ const result = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  authState.role = 'admin'
   api.evaluation.mockResolvedValue(result)
   api.runEvaluation.mockResolvedValue(result)
 })
@@ -50,4 +54,13 @@ it('retains displayed results and restores run controls after a failed run', asy
   expect(await screen.findByRole('alert')).toHaveTextContent('No labelled events found')
   expect(screen.getByText('Metrics comparison')).toBeInTheDocument()
   await waitFor(() => expect(screen.getByRole('button', { name: 'Run evaluation' })).toBeEnabled())
+})
+
+it('allows analysts to view results without offering evaluation execution', async () => {
+  authState.role = 'analyst'
+  render(<Evaluation />)
+  await screen.findByText('Metrics comparison')
+  expect(screen.queryByRole('button', { name: 'Run evaluation' })).not.toBeInTheDocument()
+  expect(screen.getByText('Only administrators can run the evaluation')).toBeInTheDocument()
+  expect(api.runEvaluation).not.toHaveBeenCalled()
 })

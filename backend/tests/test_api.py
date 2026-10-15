@@ -29,7 +29,7 @@ def test_list_accounts_admin_only(client, admin, analyst):
     assert response.status_code == 200
     accounts = response.json()
     assert {account["username"] for account in accounts} >= {"admin", "analyst"}
-    assert all(set(account) == {"id", "username", "role", "created_at"} for account in accounts)
+    assert all({"id", "username", "role", "created_at"} <= set(account) for account in accounts)
 
 
 def test_full_flow_ingest_score_case_and_evaluate(client, admin, analyst):
@@ -53,6 +53,7 @@ def test_full_flow_ingest_score_case_and_evaluate(client, admin, analyst):
 
     detail = client.get(f"/api/alerts/{top['id']}", headers=analyst).json()
     assert detail["notes"] == []
+    assert client.post(f"/api/alerts/{top['id']}/claim", headers=analyst).status_code == 200
     assert client.post(f"/api/alerts/{top['id']}/notes", json={"note": "Looking into it"}, headers=analyst).status_code == 201
     assert client.patch(f"/api/alerts/{top['id']}", json={"status": "under_investigation"}, headers=analyst).status_code == 200
     assert client.patch(f"/api/alerts/{top['id']}", json={"status": "bogus"}, headers=analyst).status_code == 422
@@ -74,7 +75,7 @@ def test_full_flow_ingest_score_case_and_evaluate(client, admin, analyst):
     assert client.put("/api/rules", json={"values": {"nope": 1}}, headers=admin).status_code == 422
     client.put("/api/rules", json={"values": {"bulk_download_mb": 500}}, headers=admin)
 
-    ev = client.post("/api/evaluation/run", headers=analyst)
+    ev = client.post("/api/evaluation/run", headers=admin)
     assert ev.status_code == 200
     modes = ev.json()["modes"]
     assert set(modes) == {"rule_only", "anomaly_only", "hybrid"}

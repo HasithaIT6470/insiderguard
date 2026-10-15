@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowDown, ArrowUp, ArrowUpDown, Bell, CheckCheck, ChevronLeft, ChevronRight, RefreshCw, RotateCcw, Search, ShieldAlert } from 'lucide-react'
 import { api } from '../api'
+import { useAuth } from '../App.jsx'
+import { CaseActions, TeamWorkload } from '../cases.jsx'
 import { CategoryBadge, DISCLAIMER, ScoreBar, Status, STATUS_LABEL, fmt, useLoad } from '../components.jsx'
 
 const PAGE_SIZE = 20
 const LIMIT = 1000
-const SORT_COLUMNS = { id: 'Alert ID', user_id: 'User', department: 'Department', start_time: 'Started', peak_score: 'Peak score', category: 'Risk level', status: 'Case status', indicator_count: 'Indicator count' }
+const SORT_COLUMNS = { id: 'Case ID', user_id: 'User', department: 'Department', start_time: 'Started', peak_score: 'Peak score', category: 'Risk level', status: 'Case status', indicator_count: 'Indicator count', owner: 'Owner' }
 const DEFAULT_SORT = { sort_by: 'peak_score', sort_dir: 'desc', then_by: 'start_time', then_dir: 'desc' }
 
 function alertTechniques(alert) {
@@ -24,17 +26,20 @@ function SortHeader({ column, label, sort, onSort }) {
 
 export default function Alerts() {
   const navigate = useNavigate()
+  const { auth } = useAuth() || {}
   const [searchParams, setSearchParams] = useSearchParams()
   const sort = Object.fromEntries(Object.entries(DEFAULT_SORT).map(([key, fallback]) => [key, searchParams.get(key) ?? fallback]))
-  const [filters, setFilters] = useState({ query: '', status: '', category: '', department: '', tactic: '' })
-  const { data, loading, error, reload } = useLoad(() => api.alerts({ limit: LIMIT, ...sort, ...(filters.status ? { status: filters.status } : {}), ...(filters.category ? { category: filters.category } : {}), ...(filters.department ? { department: filters.department } : {}) }), [sort.sort_by, sort.sort_dir, sort.then_by, sort.then_dir, filters.status, filters.category, filters.department])
+  const filterKeys = ['query', 'status', 'category', 'department', 'tactic', 'owner']
+  const filters = Object.fromEntries(filterKeys.map(key => [key, searchParams.get(key) || '']))
+  const workload = useLoad(() => auth?.role === 'admin' ? api.teamWorkload() : Promise.resolve([]), [auth?.role])
+  const { data, loading, error, reload } = useLoad(() => api.alerts({ limit: LIMIT, ...sort, ...(filters.status ? { status: filters.status } : {}), ...(filters.category ? { category: filters.category } : {}), ...(filters.department ? { department: filters.department } : {}), ...(filters.owner ? { owner: filters.owner } : {}) }), [sort.sort_by, sort.sort_dir, sort.then_by, sort.then_dir, filters.status, filters.category, filters.department, filters.owner])
   const [page, setPage] = useState(1)
   const [departments, setDepartments] = useState([])
   const alerts = data || []
   const tactics = useMemo(() => [...new Map((data || []).flatMap(a => alertTechniques(a)
     .flatMap(t => t.tactics || [])).map(t => [t.id, t])).values()].sort((a, b) => a.name.localeCompare(b.name)), [data])
   useEffect(() => { if (data) setDepartments(previous => [...new Set([...previous, ...data.map(a => a.department).filter(Boolean)])].sort()) }, [data])
-  useEffect(() => { setPage(1) }, [sort.sort_by, sort.sort_dir, sort.then_by, sort.then_dir])
+  useEffect(() => { setPage(1) }, [sort.sort_by, sort.sort_dir, sort.then_by, sort.then_dir, ...filterKeys.map(key => filters[key])])
   const changeSort = updates => {
     setSearchParams(previous => { const next = new URLSearchParams(previous); Object.entries({ ...sort, ...updates }).forEach(([key, value]) => next.set(key, value)); return next })
     setPage(1)
@@ -56,15 +61,17 @@ export default function Alerts() {
   const start = (currentPage - 1) * PAGE_SIZE
   const visible = filtered.slice(start, start + PAGE_SIZE)
   const hasFilters = Object.values(filters).some(Boolean)
-  const updateFilter = (key, value) => { setFilters(previous => ({ ...previous, [key]: value })); setPage(1) }
-  const clearFilters = () => { setFilters({ query: '', status: '', category: '', department: '', tactic: '' }); setPage(1) }
+  const updateFilter = (key, value) => { setSearchParams(previous => { const next = new URLSearchParams(previous); if (value) next.set(key, value); else next.delete(key); return next }); setPage(1) }
+  const clearFilters = () => { setSearchParams(previous => { const next = new URLSearchParams(previous); filterKeys.forEach(key => next.delete(key)); return next }); setPage(1) }
+  const refreshCases = () => { reload(); workload.reload() }
 
   return <div className="dash-page alerts-page">
     <header className="dash-header">
       <div><h1>Alerts</h1><p className="text-muted mb-0">Detection evidence and investigation workload</p></div>
-      <button className="btn btn-sm btn-outline-light d-inline-flex align-items-center gap-2" onClick={reload} disabled={loading}><RefreshCw size={15} aria-hidden="true" />Refresh</button>
+      <button className="btn btn-sm btn-outline-light d-inline-flex align-items-center gap-2" onClick={refreshCases} disabled={loading}><RefreshCw size={15} aria-hidden="true" />Refresh</button>
     </header>
     {error && <button className="btn btn-sm btn-outline-light align-self-start" onClick={() => changeSort(DEFAULT_SORT)}>Reset sort</button>}
+    {auth?.role === 'admin' && <TeamWorkload query={workload} />}
     <Status loading={loading} error={error}>
       {data && <>
         <section className="dash-metrics" aria-label="Loaded alert summary">
@@ -79,6 +86,10 @@ export default function Alerts() {
           <div className="dash-panel-heading"><div><h2>Alert queue</h2><p>{alerts.length.toLocaleString()} loaded alerts</p></div>
           </div>
           <div className="dash-filters alerts-filters">
+            <select className="form-select form-select-sm" aria-label="Owner" value={filters.owner} onChange={e => updateFilter('owner', e.target.value)}>
+              <option value="">All owners</option><option value="me">Mine</option><option value="unassigned">Unassigned</option>
+              {auth?.role === 'admin' && (workload.data || []).map(a => <option key={a.username} value={a.username}>{a.username}</option>)}
+            </select>
             <select className="form-select form-select-sm" aria-label="ATT&CK tactic" value={filters.tactic} onChange={e => updateFilter('tactic', e.target.value)}><option value="">All ATT&CK tactics</option>{tactics.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
             <div className="dash-search"><Search size={17} aria-hidden="true" /><input className="form-control form-control-sm" aria-label="Search alerts" placeholder="Search alert, user or indicator" value={filters.query} onChange={e => updateFilter('query', e.target.value)} /></div>
             <select className="form-select form-select-sm" aria-label="Risk level" value={filters.category} onChange={e => updateFilter('category', e.target.value)}><option value="">All risk levels</option>{['Low', 'Medium', 'High', 'Critical'].map(c => <option key={c}>{c}</option>)}</select>
@@ -93,7 +104,7 @@ export default function Alerts() {
           </div>
           {alerts.length >= LIMIT && <p className="alerts-limit" role="status">Summary and search cover the first {LIMIT.toLocaleString()} alerts in the selected sort order.</p>}
           <div className="table-responsive"><table className="table table-hover align-middle mb-0 alerts-table">
-            <thead><tr>{[['id', 'Alert'], ['user_id', 'User'], ['department', 'Department'], ['peak_score', 'Peak score'], ['category', 'Risk level'], ['status', 'Case status'], ['start_time', 'Started (UTC)'], ['indicator_count', 'Indicators']].map(([column, label]) => <SortHeader key={column} column={column} label={label} sort={sort} onSort={changeSort} />)}</tr></thead>
+            <thead><tr>{[['id', 'Alert'], ['user_id', 'User'], ['department', 'Department'], ['peak_score', 'Peak score'], ['category', 'Risk level'], ['status', 'Case status'], ['owner', 'Owner'], ['start_time', 'Started (UTC)'], ['indicator_count', 'Indicators']].map(([column, label]) => <SortHeader key={column} column={column} label={label} sort={sort} onSort={changeSort} />)}<th scope="col">Actions</th></tr></thead>
             <tbody>{visible.map(a => <tr key={a.id} className="alerts-tile" tabIndex={0} aria-label={`Open alert ${a.id}`}
               onClick={event => { if (!event.target.closest('a, button, input, select, textarea')) navigate(`/alerts/${a.id}`) }}
               onKeyDown={event => {
@@ -102,12 +113,14 @@ export default function Alerts() {
                   navigate(`/alerts/${a.id}`)
                 }
               }}>
-              <td><Link className="fw-semibold" to={`/alerts/${a.id}`}>Alert #{a.id}</Link></td><td><Link to={`/users/${encodeURIComponent(a.user_id)}`}>{a.user_id}</Link></td>
+              <td><Link className="fw-semibold" to={`/alerts/${a.id}`}>Case #{a.id}</Link></td><td><Link to={`/users/${encodeURIComponent(a.user_id)}`}>{a.user_id}</Link></td>
               <td>{a.department || 'Unassigned'}</td>
               <td><ScoreBar score={a.peak_score} category={a.category} /></td><td><CategoryBadge category={a.category} /></td>
               <td><span className={`alerts-status alerts-status-${a.status}`}>{STATUS_LABEL[a.status] || a.status}</span></td>
+              <td>{a.owner || <span className="text-muted">Unassigned</span>}</td>
               <td className="alerts-date">{fmt(a.start_time)}</td>
               <td className="alerts-indicators">{(a.breakdown || []).length ? <><span className="text-muted">{a.breakdown.length} indicators</span><ul>{a.breakdown.slice(0, 3).map((b, i) => <li key={i}>{b.name}</li>)}</ul></> : <span className="text-muted">No indicators</span>}{a.breakdown?.length > 3 && <span className="text-muted">+{a.breakdown.length - 3} more</span>}</td>
+              <td><CaseActions alert={a} onComplete={refreshCases} /></td>
             </tr>)}</tbody>
           </table></div>
           {!filtered.length && <div className="dash-empty"><Bell size={25} aria-hidden="true" /><p className="mt-2 mb-2">{hasFilters ? 'No alerts match these filters.' : 'No alerts recorded.'}</p>{hasFilters && <button className="btn btn-sm btn-outline-primary" onClick={clearFilters}>Clear filters</button>}</div>}

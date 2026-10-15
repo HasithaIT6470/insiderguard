@@ -140,6 +140,28 @@ class CaseNote(Base):
     created_at = Column(DateTime, default=utcnow)
 
 
+class AlertAssignment(Base):
+    __tablename__ = "alert_assignments"
+    id = Column(Integer, primary_key=True)
+    alert_id = Column(Integer, ForeignKey("alerts.id", ondelete="CASCADE"), unique=True, index=True, nullable=False)
+    # Username intentionally has no foreign key: closed cases retain historical ownership.
+    owner = Column(String(64), nullable=False, index=True)
+    assigned_by = Column(String(64), nullable=False)
+    assigned_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, nullable=False)
+
+
+class CaseEvent(Base):
+    __tablename__ = "case_events"
+    id = Column(Integer, primary_key=True)
+    alert_id = Column(Integer, ForeignKey("alerts.id", ondelete="CASCADE"), index=True, nullable=False)
+    action = Column(String(48), nullable=False)
+    actor = Column(String(64), nullable=False)
+    actor_role = Column(String(16), nullable=False)
+    detail = Column(JSON, default=dict, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
     id = Column(Integer, primary_key=True)

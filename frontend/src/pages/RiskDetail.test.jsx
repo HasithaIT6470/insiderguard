@@ -1,9 +1,11 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { api } from '../api'
 import RiskDetail from './RiskDetail.jsx'
 
-vi.mock('../api', () => ({ api: { alert: vi.fn(), userRisk: vi.fn(), userTimeline: vi.fn(), userActivity: vi.fn() } }))
+const authState = vi.hoisted(() => ({ role: 'analyst', username: 'analyst' }))
+vi.mock('../App.jsx', () => ({ useAuth: () => ({ auth: authState }) }))
+vi.mock('../api', () => ({ api: { alert: vi.fn(), userRisk: vi.fn(), userTimeline: vi.fn(), userActivity: vi.fn(), alertEvents: vi.fn(), claimAlert: vi.fn(), setStatus: vi.fn(), addNote: vi.fn(), explain: vi.fn(), releaseAlert: vi.fn() } }))
 vi.mock('react-chartjs-2', () => ({ Bar: () => <div>Chart</div> }))
 
 const attribution = '© 2026 The MITRE Corporation. This work is reproduced and distributed with the permission of The MITRE Corporation. MITRE ATT&CK and ATT&CK are registered trademarks of The MITRE Corporation.'
@@ -12,6 +14,9 @@ const technique = { id: 'T1110', name: 'Brute Force', tactics: [{ id: 'TA0006', 
 
 beforeEach(() => {
   vi.clearAllMocks()
+  authState.role = 'analyst'
+  authState.username = 'analyst'
+  api.alertEvents.mockResolvedValue([])
   api.alert.mockResolvedValue({ id: 1, user_id: 'u1', peak_score: 40, category: 'High', status: 'open',
     breakdown: [{ name: 'failed_logon_burst', category: 'denied', source: 'rule', weight: 15, attack: [technique] }],
     notes: [], attack: { attack_version: '20.0', attribution, techniques: [technique], tactics: [{ id: 'TA0006', name: 'Credential Access', techniques: ['T1110'] }] } })
@@ -64,4 +69,71 @@ it('shows a technique once even when it belongs to multiple tactics and evidence
   expect(screen.getAllByText('T1078', { exact: true })).toHaveLength(1)
   expect(screen.getByText('Initial Access, Persistence')).toBeInTheDocument()
   expect(screen.queryByRole('columnheader', { name: 'ATT&CK' })).not.toBeInTheDocument()
+})
+
+it.each(['admin', 'analyst'])('keeps alert details read-only for %s', async role => {
+  authState.role = role
+  renderAlert()
+  await screen.findByText('Case #1', { exact: false })
+  expect(screen.queryByLabelText('Status')).not.toBeInTheDocument()
+  expect(screen.queryByLabelText('Investigation note')).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Request AI explanation' })).not.toBeInTheDocument()
+  expect(screen.getByRole('region', { name: 'Case event timeline' })).toBeInTheDocument()
+})
+
+it('enables owner-only editing in My cases, confirms status changes and records notes', async () => {
+  const alert = await api.alert()
+  api.alert.mockResolvedValue({ ...alert, owner: 'analyst' })
+  api.setStatus.mockResolvedValue({})
+  api.addNote.mockResolvedValue({})
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
+  render(<MemoryRouter initialEntries={['/my-cases/1']}><Routes><Route path="/my-cases/:id" element={<RiskDetail mode="alert" editable />} /></Routes></MemoryRouter>)
+  fireEvent.change(await screen.findByLabelText('Status'), { target: { value: 'under_investigation' } })
+  await waitFor(() => expect(api.setStatus).toHaveBeenCalledWith(1, 'under_investigation'))
+  fireEvent.change(await screen.findByLabelText('Investigation note'), { target: { value: 'Reviewed synthetic evidence' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Add', exact: true }))
+  await waitFor(() => expect(api.addNote).toHaveBeenCalledWith(1, 'Reviewed synthetic evidence'))
+  expect(await screen.findByRole('button', { name: 'Request AI explanation' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Release case' })).toBeInTheDocument()
+  window.confirm.mockRestore()
+})
+
+it('redirects non-owners to read-only details with a message', async () => {
+  const alert = await api.alert()
+  api.alert.mockResolvedValue({ ...alert, owner: 'another-analyst' })
+  render(<MemoryRouter initialEntries={['/my-cases/1']}><Routes>
+    <Route path="/my-cases/:id" element={<RiskDetail mode="alert" editable />} />
+    <Route path="/alerts/:id" element={<RiskDetail mode="alert" />} />
+  </Routes></MemoryRouter>)
+  expect(await screen.findByText(/Only the case owner can work this case/)).toBeInTheDocument()
+  expect(screen.queryByLabelText('Investigation note')).not.toBeInTheDocument()
+})
+
+it('shows a lifecycle warning even if a later event is a status change', async () => {
+  api.alertEvents.mockResolvedValue([
+    { id: 1, action: 'no_longer_detected', actor: 'system', detail: {} },
+    { id: 2, action: 'status_changed', actor: 'analyst', detail: { from: 'open', to: 'closed' } },
+  ])
+  renderAlert()
+  expect(await screen.findByText('No longer detected by current rules')).toBeInTheDocument()
+})
+
+it('releases an owned case with a reason and returns to read-only details', async () => {
+  const alert = await api.alert()
+  api.alert.mockResolvedValue({ ...alert, owner: 'analyst' })
+  api.releaseAlert.mockResolvedValue({})
+  HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
+  HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
+  render(<MemoryRouter initialEntries={['/my-cases/1']}><Routes>
+    <Route path="/my-cases/:id" element={<RiskDetail mode="alert" editable />} />
+    <Route path="/alerts/:id" element={<RiskDetail mode="alert" />} />
+  </Routes></MemoryRouter>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Release case' }))
+  const dialog = within(screen.getByRole('dialog', { name: 'Release Case #1' }))
+  expect(dialog.getByRole('button', { name: 'Release case' })).toBeDisabled()
+  fireEvent.change(dialog.getByLabelText('Reason'), { target: { value: 'End of shift handoff' } })
+  fireEvent.click(dialog.getByRole('button', { name: 'Release case' }))
+  await waitFor(() => expect(api.releaseAlert).toHaveBeenCalledWith(1, 'End of shift handoff'))
+  expect(await screen.findByText('Case released back to the queue.')).toBeInTheDocument()
+  expect(screen.queryByLabelText('Investigation note')).not.toBeInTheDocument()
 })

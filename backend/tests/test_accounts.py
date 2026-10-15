@@ -54,7 +54,7 @@ def test_create_roles_duplicates_and_private_account_list(account_env):
         assert client.post("/api/auth/accounts", json=body, headers=admin).status_code == 409
     rows = accounts(client, admin)
     assert len(rows) == 4
-    assert all(set(row) == {"id", "username", "role", "created_at"} for row in rows)
+    assert all({"id", "username", "role", "created_at"} <= set(row) for row in rows)
     assert [row["created_at"] for row in rows] == sorted(row["created_at"] for row in rows)
 
 
@@ -104,7 +104,7 @@ def test_delete_guards_deleted_token_and_audit(account_env):
     assert client.get("/api/auth/me", headers=analyst).status_code == 401
     audit = client.get("/api/audit", headers=admin).json()
     entry = next(row for row in audit if row["action"] == "delete_account")
-    assert entry["target"] == "viewer" and entry["detail"] == {"role": "analyst"}
+    assert entry["target"] == "viewer" and entry["detail"] == {"role": "analyst", "released_cases": 0}
     assert any(row["action"] == "create_account" for row in audit)
 
 

@@ -21,6 +21,14 @@ beforeEach(() => {
   HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
 })
 
+it('shows an analyst\'s open case count and warns before returning their cases to the queue', async () => {
+  api.accounts.mockResolvedValue([{ id: 2, username: 'viewer', role: 'analyst', open_cases: 3 }])
+  render(<MemoryRouter><Accounts /></MemoryRouter>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete viewer' }))
+  expect(screen.getByText(/3 open cases will return to the queue/)).toBeInTheDocument()
+  expect(api.deleteAccount).not.toHaveBeenCalled()
+})
+
 it.each(['admin', 'analyst'])('creates an %s account, toggles password visibility, and refreshes the list', async role => {
   render(<MemoryRouter><Accounts /></MemoryRouter>)
   await screen.findByText('viewer')

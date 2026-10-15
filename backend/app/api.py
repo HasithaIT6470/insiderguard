@@ -14,19 +14,20 @@ from fastapi.responses import Response
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
 from sqlalchemy import case, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from . import ai, config, mitre
+from . import ai, cases, config, mitre
 from .database import SessionLocal, get_db
 from .evaluation import run_evaluation
 from .models import (
     Alert, AuditLog, Baseline, CaseNote, Detection, Event, EvaluationRun, Honeytoken, ParseError, RiskPoint,
-    RuleConfig, Subject, User, utcnow,
+    AlertAssignment, CaseEvent, RuleConfig, Subject, User, utcnow,
 )
 from .pipeline import current_risk, dataset_end, ingest_records, load_config, reprocess_users
 from .reports import router as reports_router
 from .security import (
-    ROLES, audit, create_token, get_current_user, hash_password, require_admin, require_staff, verify_password,
+    ROLES, audit, create_token, get_current_user, hash_password, require_admin, require_analyst, require_staff, verify_password,
 )
 
 router = APIRouter(prefix="/api")
@@ -41,7 +42,8 @@ def _iso(dt):
     return dt.isoformat() if dt else None
 
 
-def _alert_dict(a: Alert, dept: str | None = None, notes: list | None = None) -> dict:
+def _alert_dict(a: Alert, dept: str | None = None, notes: list | None = None,
+                assignment: AlertAssignment | None = None, detection_state: str | None = None) -> dict:
     out = {
         "id": a.id, "user_id": a.user_id, "department": dept, "start_time": _iso(a.start_time),
         "last_time": _iso(a.last_time), "peak_score": a.peak_score, "category": a.category,
@@ -49,6 +51,9 @@ def _alert_dict(a: Alert, dept: str | None = None, notes: list | None = None) ->
         "attack": mitre.attack_summary(a.breakdown),
         "narrative_status": a.narrative_status,
         "narrative_disclaimer": ai.DISCLAIMER if a.narrative else None,
+        "owner": assignment.owner if assignment else None,
+        "assigned_at": _iso(assignment.assigned_at) if assignment else None,
+        "detection_state": detection_state,
     }
     if notes is not None:
         out["notes"] = [{"id": n.id, "author": n.author, "note": n.note, "created_at": _iso(n.created_at)} for n in notes]
@@ -140,7 +145,10 @@ def change_password(body: ChangePasswordIn, db: Session = Depends(get_db), user:
 
 @router.get("/auth/accounts")
 def list_accounts(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    return [{"id": user.id, "username": user.username, "role": user.role, "created_at": _iso(user.created_at)}
+    counts = dict(db.execute(select(AlertAssignment.owner, func.count()).join(Alert, Alert.id == AlertAssignment.alert_id)
+                            .where(Alert.status != "closed").group_by(AlertAssignment.owner)).all())
+    return [{"id": user.id, "username": user.username, "role": user.role, "created_at": _iso(user.created_at),
+             **({"open_cases": counts.get(user.username, 0)} if user.role == "analyst" else {})}
             for user in db.scalars(select(User).order_by(User.created_at, User.id))]
 
 
@@ -171,7 +179,8 @@ def delete_account(account_id: int, db: Session = Depends(get_db), admin: User =
     if target.id == admin.id:
         raise HTTPException(409, "Cannot delete your own account")
     username = target.username
-    audit(db, admin, "delete_account", username, {"role": target.role})
+    released = cases.release_account_cases(db, username, admin) if target.role == "analyst" else 0
+    audit(db, admin, "delete_account", username, {"role": target.role, "released_cases": released})
     db.delete(target)
     db.commit()
     return {"deleted": username}
@@ -287,6 +296,8 @@ def user_risk(user_id: str, db: Session = Depends(get_db), user: User = Depends(
     r = current_risk(db, cfg).get(user_id)
     base = db.get(Baseline, user_id)
     alerts = db.scalars(select(Alert).where(Alert.user_id == user_id).order_by(Alert.start_time.desc())).all()
+    assignments = cases.owners_for(db, [a.id for a in alerts])
+    states = cases.detection_states(db, [a.id for a in alerts])
     audit(db, user, "view_user_risk", user_id)
     db.commit()
     return {
@@ -296,7 +307,7 @@ def user_risk(user_id: str, db: Session = Depends(get_db), user: User = Depends(
         "baseline": ({"status": base.status, "window_start": _iso(base.window_start),
                       "window_end": _iso(base.window_end), "event_count": base.event_count, **(base.stats or {})}
                      if base else None),
-        "alerts": [_alert_dict(a, sub.department) for a in alerts],
+        "alerts": [_alert_dict(a, sub.department, assignment=assignments.get(a.id), detection_state=states.get(a.id)) for a in alerts],
         "note": "Risk scores are investigative leads only and are not proof of malicious intent.",
     }
 
@@ -346,15 +357,136 @@ def user_activity(user_id: str, days: int = Query(30, le=120), db: Session = Dep
 
 
 # --------------------------------------------------------------------------- alerts & cases
+def _case_or_404(db, alert_id):
+    alert = db.scalar(select(Alert).where(Alert.id == alert_id).with_for_update())
+    if alert is None:
+        raise HTTPException(404, "Alert not found")
+    return alert
+
+
+def _owned_alert_dict(db, alert):
+    subject = db.get(Subject, alert.user_id)
+    return _alert_dict(alert, subject.department if subject else None,
+                       assignment=cases.owners_for(db, [alert.id]).get(alert.id),
+                       detection_state=cases.detection_states(db, [alert.id]).get(alert.id))
+
+
+class ReleaseIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=2000)
+
+
+class AssignIn(BaseModel):
+    owner: str = Field(min_length=1, max_length=64)
+
+
+@router.post("/alerts/{alert_id}/claim")
+def claim_alert(alert_id: int, db: Session = Depends(get_db), user: User = Depends(require_analyst)):
+    alert = _case_or_404(db, alert_id)
+    if alert.status == "closed":
+        raise HTTPException(409, "Closed cases cannot be claimed")
+    owner = cases.get_owner(db, alert_id)
+    if owner:
+        raise HTTPException(409, f"Already claimed by {owner}")
+    db.add(AlertAssignment(alert_id=alert_id, owner=user.username, assigned_by=user.username))
+    try:
+        db.flush()  # The unique alert_id constraint decides concurrent claims, not the read above.
+    except IntegrityError:
+        db.rollback()
+        owner = cases.get_owner(db, alert_id)
+        raise HTTPException(409, f"Already claimed by {owner}" if owner else "Case ownership changed; try again")
+    cases.record_event(db, alert, "claimed", user, {"from": None, "to": user.username})
+    audit(db, user, "claim_case", str(alert_id), {"owner": user.username})
+    db.commit()
+    return _owned_alert_dict(db, alert)
+
+
+@router.post("/alerts/{alert_id}/release")
+def release_alert(alert_id: int, body: ReleaseIn, db: Session = Depends(get_db), user: User = Depends(require_analyst)):
+    alert = _case_or_404(db, alert_id)
+    assignment = cases.require_owner(db, alert, user)
+    if alert.status == "closed":
+        raise HTTPException(409, "Closed cases cannot be released")
+    reason = body.reason.strip()
+    if len(reason) < 3:
+        raise HTTPException(422, "Reason must contain at least 3 non-padding characters")
+    cases.release_assignment(db, alert, assignment, user, reason)
+    db.commit()
+    return _owned_alert_dict(db, alert)
+
+
+@router.post("/alerts/{alert_id}/assign")
+def assign_alert(alert_id: int, body: AssignIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    alert = _case_or_404(db, alert_id)
+    target = db.scalar(select(User).where(User.username == body.owner).with_for_update())
+    if target is None or target.role != "analyst":
+        raise HTTPException(422, "Owner must be an existing analyst")
+    assignment = db.scalar(select(AlertAssignment).where(AlertAssignment.alert_id == alert_id).with_for_update())
+    previous = assignment.owner if assignment else None
+    now = utcnow()
+    if assignment is None:
+        assignment = AlertAssignment(alert_id=alert_id, owner=target.username, assigned_by=admin.username,
+                                     assigned_at=now, updated_at=now)
+        db.add(assignment)
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, "Case ownership changed; refresh and try again")
+    else:
+        assignment.owner, assignment.assigned_by = target.username, admin.username
+        assignment.assigned_at = assignment.updated_at = now
+    action = "reassigned" if previous else "assigned"
+    detail = {"from": previous, "to": target.username}
+    cases.record_event(db, alert, action, admin, detail)
+    audit(db, admin, "reassign_case" if previous else "assign_case", str(alert_id), detail)
+    db.commit()
+    return _owned_alert_dict(db, alert)
+
+
+@router.get("/alerts/{alert_id}/events")
+def alert_events(alert_id: int, db: Session = Depends(get_db), user: User = Depends(require_staff)):
+    if db.get(Alert, alert_id) is None:
+        raise HTTPException(404, "Alert not found")
+    return [{"id": e.id, "alert_id": e.alert_id, "action": e.action, "actor": e.actor,
+             "actor_role": e.actor_role, "detail": e.detail, "created_at": _iso(e.created_at)}
+            for e in db.scalars(select(CaseEvent).where(CaseEvent.alert_id == alert_id)
+                                .order_by(CaseEvent.created_at, CaseEvent.id))]
+
+
+@router.get("/my-cases")
+def my_cases(status: Literal["open", "under_investigation", "closed"] | None = None,
+              db: Session = Depends(get_db), user: User = Depends(require_analyst)):
+    rows = db.execute(select(Alert, Subject.department, AlertAssignment)
+                      .join(AlertAssignment, AlertAssignment.alert_id == Alert.id)
+                      .outerjoin(Subject, Subject.user_id == Alert.user_id)
+                      .where(AlertAssignment.owner == user.username).order_by(Alert.start_time, Alert.id)).all()
+    states = cases.detection_states(db, [a.id for a, _, _ in rows])
+    now = utcnow()
+    return {"cases": [{**_alert_dict(a, department, assignment=assignment, detection_state=states.get(a.id)),
+                        "age_hours": cases.age_hours(a, now)} for a, department, assignment in rows
+                       if not status or a.status == status],
+            "summary": cases.summarize([a for a, _, _ in rows], now)}
+
+
+@router.get("/team/workload")
+def team_workload(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    return cases.workload(db)
+
+
 @router.get("/alerts")
 def list_alerts(status: str | None = None, category: str | None = None, department: str | None = None,
-                user_id: str | None = None, limit: int = Query(200, ge=1, le=1000),
-                sort_by: Literal['id', 'user_id', 'department', 'start_time', 'peak_score', 'category', 'status', 'indicator_count'] = 'peak_score',
+                user_id: str | None = None, owner: str | None = None, limit: int = Query(200, ge=1, le=1000),
+                sort_by: Literal['id', 'user_id', 'department', 'start_time', 'peak_score', 'category', 'status', 'indicator_count', 'owner'] = 'peak_score',
                 sort_dir: Literal['asc', 'desc'] = 'desc',
-                then_by: Literal['id', 'user_id', 'department', 'start_time', 'peak_score', 'category', 'status', 'indicator_count', ''] | None = Query('start_time', description='Secondary column; empty disables secondary sorting'),
+                then_by: Literal['id', 'user_id', 'department', 'start_time', 'peak_score', 'category', 'status', 'indicator_count', 'owner', ''] | None = Query('start_time', description='Secondary column; empty disables secondary sorting'),
                 then_dir: Literal['asc', 'desc'] = 'desc', db: Session = Depends(get_db),
                 user: User = Depends(require_staff)):
-    q = select(Alert, Subject.department).join(Subject, Subject.user_id == Alert.user_id)
+    q = select(Alert, Subject.department, AlertAssignment).join(Subject, Subject.user_id == Alert.user_id).outerjoin(
+        AlertAssignment, AlertAssignment.alert_id == Alert.id)
+    if owner == "unassigned":
+        q = q.where(AlertAssignment.id.is_(None))
+    elif owner:
+        q = q.where(AlertAssignment.owner == (user.username if owner == "me" else owner))
     if status:
         q = q.where(Alert.status == status)
     if category:
@@ -370,13 +502,16 @@ def list_alerts(status: str | None = None, category: str | None = None, departme
         'start_time': Alert.start_time, 'peak_score': Alert.peak_score,
         'category': case(severity, value=Alert.category, else_=-1),
         'status': case(workflow, value=Alert.status, else_=-1),
+        'owner': func.coalesce(AlertAssignment.owner, ''),
     }
     ordering = [(sort_by, sort_dir)] + ([(then_by, then_dir)] if then_by else [])
     if any(key == 'indicator_count' for key, _ in ordering):
         # JSON array length is not portable across the supported SQL backends.
         rows = db.execute(q.order_by(Alert.id.asc())).all()
         def value(row, key):
-            alert, dept = row
+            alert, dept, assignment = row
+            if key == 'owner':
+                return assignment.owner if assignment else ''
             if key == 'indicator_count':
                 return len(alert.breakdown or [])
             if key == 'department':
@@ -392,7 +527,8 @@ def list_alerts(status: str | None = None, category: str | None = None, departme
     else:
         expressions = [(columns[key].desc() if direction == 'desc' else columns[key].asc()) for key, direction in ordering]
         rows = db.execute(q.order_by(*expressions, Alert.id.asc()).limit(limit)).all()
-    return [_alert_dict(a, d) for a, d in rows]
+    states = cases.detection_states(db, [a.id for a, _, _ in rows])
+    return [_alert_dict(a, d, assignment=assignment, detection_state=states.get(a.id)) for a, d, assignment in rows]
 
 
 @router.get("/alerts/{alert_id}")
@@ -404,7 +540,8 @@ def get_alert(alert_id: int, db: Session = Depends(get_db), user: User = Depends
     notes = db.scalars(select(CaseNote).where(CaseNote.alert_id == a.id).order_by(CaseNote.id)).all()
     audit(db, user, "view_alert", str(a.id), {"score": a.peak_score})  # REQ-10-01: reviewing the score
     db.commit()
-    return _alert_dict(a, sub.department if sub else None, notes)
+    return _alert_dict(a, sub.department if sub else None, notes, cases.owners_for(db, [a.id]).get(a.id),
+                       cases.detection_states(db, [a.id]).get(a.id))
 
 
 class StatusIn(BaseModel):
@@ -417,19 +554,20 @@ class NoteIn(BaseModel):
 
 @router.patch("/alerts/{alert_id}")
 def update_alert(alert_id: int, body: StatusIn, db: Session = Depends(get_db), user: User = Depends(require_staff)):
-    a = db.get(Alert, alert_id)
-    if not a:
-        raise HTTPException(404, "Alert not found")
+    a = _case_or_404(db, alert_id)
+    assignment = cases.require_owner(db, a, user)
     old, a.status, a.updated_at = a.status, body.status, utcnow()
+    if old != body.status:
+        cases.record_event(db, a, "status_changed", user, {"from": old, "to": body.status})
     audit(db, user, "change_case_status", str(a.id), {"from": old, "to": body.status})
     db.commit()
-    return _alert_dict(a)
+    return _alert_dict(a, assignment=assignment)
 
 
 @router.post("/alerts/{alert_id}/notes", status_code=201)
 def add_note(alert_id: int, body: NoteIn, db: Session = Depends(get_db), user: User = Depends(require_staff)):
-    if not db.get(Alert, alert_id):
-        raise HTTPException(404, "Alert not found")
+    a = _case_or_404(db, alert_id)
+    cases.require_owner(db, a, user)
     n = CaseNote(alert_id=alert_id, author=user.username, note=body.note.strip())
     db.add(n)
     audit(db, user, "add_investigation_note", str(alert_id), {"length": len(body.note)})
@@ -439,13 +577,12 @@ def add_note(alert_id: int, body: NoteIn, db: Session = Depends(get_db), user: U
 
 @router.post("/alerts/{alert_id}/explain")
 def explain(alert_id: int, db: Session = Depends(get_db), user: User = Depends(require_staff)):
-    a = db.get(Alert, alert_id)
-    if not a:
-        raise HTTPException(404, "Alert not found")
+    a = _case_or_404(db, alert_id)
+    assignment = cases.require_owner(db, a, user)
     ok = ai.explain_alert(db, a)
     audit(db, user, "request_ai_explanation", str(a.id), {"ok": ok})
     db.commit()
-    return {**_alert_dict(a), "ai_available": ok}
+    return {**_alert_dict(a, assignment=assignment), "ai_available": ok}
 
 
 # --------------------------------------------------------------------------- dashboard & reports
@@ -626,7 +763,7 @@ def evaluation_results(db: Session = Depends(get_db), user: User = Depends(requi
 
 @router.post("/evaluation/run")
 def evaluation_run(threshold: float | None = Query(None, ge=1, le=100), db: Session = Depends(get_db),
-                   user: User = Depends(require_staff)):
+                   user: User = Depends(require_admin)):
     result = run_evaluation(db, run_by=user.username, threshold=threshold)
     if "error" in result:
         raise HTTPException(409, result["error"])

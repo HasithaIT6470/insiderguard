@@ -3,6 +3,7 @@ import { Activity, FlaskConical, Play, RefreshCw, ShieldAlert, Users } from 'luc
 import { BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip } from 'chart.js'
 import { Bar } from 'react-chartjs-2'
 import { api } from '../api'
+import { useAuth } from '../App.jsx'
 import { Status, fmt, useLoad } from '../components.jsx'
 
 ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend)
@@ -21,6 +22,7 @@ const METRICS = [
 ]
 
 export default function Evaluation() {
+  const { auth } = useAuth() || {}
   const { data, loading, error, reload } = useLoad(() => api.evaluation().catch(e => { if (e.status === 404) return null; throw e }))
   const [busy, setBusy] = useState(false)
   const [runError, setRunError] = useState(null)
@@ -42,7 +44,8 @@ export default function Evaluation() {
       <div><h1>Detection evaluation</h1><p className="text-muted mb-0">Rule-Only, Anomaly-Only and Hybrid detection comparison</p></div>
       <div className="evaluation-actions">
         <button className="btn btn-outline-light btn-sm evaluation-icon-button" title="Refresh results" aria-label="Refresh results" disabled={busy || loading} onClick={reload}><RefreshCw size={16} /></button>
-        <button className="btn btn-primary btn-sm" onClick={run} disabled={busy || loading}><Play size={15} aria-hidden="true" />{busy ? 'Running evaluation...' : 'Run evaluation'}</button>
+        {auth?.role === 'admin' ? <button className="btn btn-primary btn-sm" onClick={run} disabled={busy || loading}><Play size={15} aria-hidden="true" />{busy ? 'Running evaluation...' : 'Run evaluation'}</button>
+          : <span className="small text-muted">Only administrators can run the evaluation</span>}
       </div>
     </header>
     {runError && <div className="alert alert-danger mb-0" role="alert">{runError}</div>}

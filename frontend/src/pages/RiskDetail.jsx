@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, LineElement, PointElement, Tooltip } from 'chart.js'
 import { Bar } from 'react-chartjs-2'
 import { api } from '../api'
+import { useAuth } from '../App.jsx'
+import { CaseActions, CaseEvents, ReleaseDialog, notifyCasesChanged } from '../cases.jsx'
 import { AttackChip, CategoryBadge, DISCLAIMER, ScoreBar, Status, STATUS_LABEL, fmt, useLoad } from '../components.jsx'
 
 ChartJS.register(BarElement, CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Legend)
@@ -48,15 +50,21 @@ function AttackMapping({ attack }) {
   </section>
 }
 
-function CasePanel({ alertId }) {
-  const { data: a, loading, error, reload } = useLoad(() => api.alert(alertId), [alertId])
+function CasePanel({ alertId, query, editable }) {
+  const { data: a, loading, error, reload } = query
+  const navigate = useNavigate()
+  const events = useLoad(() => api.alertEvents(alertId), [alertId])
+  const [releasing, setReleasing] = useState(false)
+  const [actionError, setActionError] = useState(null)
+  const refresh = () => { reload(); events.reload(); notifyCasesChanged() }
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [aiMsg, setAiMsg] = useState(null)
 
   const act = async (fn) => {
     setBusy(true)
-    try { await fn(); reload() } finally { setBusy(false) }
+    setActionError(null)
+    try { await fn(); refresh() } catch (e) { setActionError(e.message); reload() } finally { setBusy(false) }
   }
   const explain = async () => {
     setBusy(true)
@@ -64,8 +72,8 @@ function CasePanel({ alertId }) {
     try {
       const r = await api.explain(alertId)
       if (!r.ai_available) setAiMsg('AI explanation unavailable — the deterministic evidence above is unaffected.')
-      reload()
-    } catch (e) { setAiMsg(e.message) } finally { setBusy(false) }
+      refresh()
+    } catch (e) { setAiMsg(e.message); reload() } finally { setBusy(false) }
   }
 
   return (
@@ -74,7 +82,7 @@ function CasePanel({ alertId }) {
         <div className="card p-3 mb-3">
           <div className="d-flex justify-content-between align-items-start mb-2">
             <div>
-              <h2 className="h5 mb-1">Alert #{a.id} · <Link to={`/users/${a.user_id}`}>{a.user_id}</Link> <CategoryBadge category={a.category} /></h2>
+              <h2 className="h5 mb-1">Case #{a.id} · <Link to={`/users/${encodeURIComponent(a.user_id)}`}>{a.user_id}</Link> <CategoryBadge category={a.category} /></h2>
               <div className="small text-muted">{a.department} · {fmt(a.start_time)} → {fmt(a.last_time)}</div>
             </div>
             <div className="text-end">
@@ -82,6 +90,14 @@ function CasePanel({ alertId }) {
               <div className="kpi">{a.peak_score}</div>
             </div>
           </div>
+          <div className="case-overview mb-3">
+            <span>Owner: <strong>{a.owner || 'Unassigned'}</strong></span><span>Status: <strong>{STATUS_LABEL[a.status]}</strong></span>
+            {!editable && <CaseActions alert={a} detail onComplete={refresh} />}
+          </div>
+          {(a.detection_state === 'no_longer_detected' ||
+            [...(events.data || [])].reverse().find(e => ['no_longer_detected', 'redetected'].includes(e.action))?.action === 'no_longer_detected') &&
+            <div className="alert alert-warning" role="status">No longer detected by current rules</div>}
+          {actionError && <div className="alert alert-danger" role="alert">{actionError}</div>}
           <h3 className="h6 mt-2">Score composition (deterministic)</h3>
           <Breakdown items={a.breakdown} />
           <AttackMapping attack={a.attack} />
@@ -97,34 +113,40 @@ function CasePanel({ alertId }) {
               {a.narrative_status === 'unavailable' ? 'No explanation available (AI service unavailable or not configured).' : 'No explanation requested yet.'}
             </div>
           )}
-          {!a.narrative && <button className="btn btn-sm btn-outline-secondary mt-1" disabled={busy} onClick={explain}>Request AI explanation</button>}
+          {editable && !a.narrative && <button className="btn btn-sm btn-outline-secondary mt-1" disabled={busy} onClick={explain}>Request AI explanation</button>}
           {aiMsg && <div className="small text-warning-emphasis mt-1">{aiMsg}</div>}
 
           <h3 className="h6 mt-4">Case</h3>
-          <div className="d-flex align-items-center gap-2 mb-3">
+          {editable && <div className="d-flex align-items-center gap-2 mb-3">
             <label htmlFor="st" className="small text-muted">Status</label>
             <select id="st" className="form-select form-select-sm w-auto" value={a.status} disabled={busy}
-              onChange={(e) => act(() => api.setStatus(a.id, e.target.value))}>
+              onChange={(e) => { const status = e.target.value; if (status !== a.status && window.confirm(`Change Case #${a.id} to ${STATUS_LABEL[status]}?`)) act(() => api.setStatus(a.id, status)) }}>
               {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
-          </div>
-          {a.notes.map((n) => (
+          </div>}
+          {(a.notes || []).map((n) => (
             <div key={n.id} className="border-start border-3 ps-2 mb-2">
               <div className="small text-muted">{n.author} · {fmt(n.created_at)}</div>
               <div style={{ whiteSpace: 'pre-wrap' }}>{n.note}</div>
             </div>
           ))}
-          <form className="d-flex gap-2" onSubmit={(e) => { e.preventDefault(); if (note.trim()) act(async () => { await api.addNote(a.id, note); setNote('') }) }}>
+          {editable && <form className="d-flex gap-2" onSubmit={(e) => { e.preventDefault(); if (note.trim()) act(async () => { await api.addNote(a.id, note); setNote('') }) }}>
             <input className="form-control form-control-sm" placeholder="Add investigation note…" value={note} maxLength={4000} onChange={(e) => setNote(e.target.value)} aria-label="Investigation note" />
             <button className="btn btn-sm btn-primary" disabled={busy || !note.trim()}>Add</button>
-          </form>
+          </form>}
+          {editable && a.status !== 'closed' && <button className="btn btn-sm btn-outline-danger mt-3" disabled={busy} onClick={() => setReleasing(true)}>Release case</button>}
+          {releasing && <ReleaseDialog alertId={a.id} onClose={() => setReleasing(false)}
+            onComplete={() => navigate(`/alerts/${a.id}`, { state: { notice: 'Case released back to the queue.' } })} />}
+          <CaseEvents events={events} />
         </div>
       )}
     </Status>
   )
 }
 
-export default function RiskDetail({ mode }) {
+export default function RiskDetail({ mode, editable = false }) {
+  const { auth } = useAuth() || {}
+  const location = useLocation()
   const { id } = useParams()
   const alertQ = useLoad(() => (mode === 'alert' ? api.alert(id) : Promise.resolve(null)), [id, mode])
   const userId = mode === 'alert' ? alertQ.data?.user_id : id
@@ -143,10 +165,14 @@ export default function RiskDetail({ mode }) {
   }
   const b = activity.data?.baseline
 
+  if (editable && alertQ.data && (auth?.role !== 'analyst' || alertQ.data.owner !== auth.username)) {
+    return <Navigate to={`/alerts/${id}`} replace state={{ notice: 'Only the case owner can work this case. This view is read-only.' }} />
+  }
   return (
     <div className="row g-3">
+      {location.state?.notice && <div className="col-12"><div className="alert alert-info mb-0" role="status">{location.state.notice}</div></div>}
       <div className="col-lg-7">
-        {mode === 'alert' && <CasePanel alertId={id} />}
+        {mode === 'alert' && <CasePanel alertId={id} query={alertQ} editable={editable} />}
         <Status loading={risk.loading} error={risk.error}>
           {r && (
             <div className="card p-3 mb-3">

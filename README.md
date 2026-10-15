@@ -30,8 +30,8 @@ Development accounts (seeded only when `INSIDERGUARD_ENV != production`; overrid
 
 | Role    | Username  | Password         | Can do |
 |---------|-----------|------------------|--------|
-| admin   | `admin`   | `Guard#12345`    | everything: ingest, honeytokens, rule thresholds, audit log |
-| analyst | `analyst` | `Review#12345`   | dashboard, alerts, cases/notes, AI explanation, reports, evaluation |
+| admin   | `admin`   | `Guard#12345`    | ingestion, honeytokens, rules, audit, ownership assignment, workload, evaluation runs; read-only case work |
+| analyst | `analyst` | `Review#12345`   | dashboard, alerts, reports, evaluation results; claim cases and work their own cases in My cases |
 
 **Change these before exposing the service anywhere.** In production, set `INSIDERGUARD_ENV=production`
 and `INSIDERGUARD_SECRET_KEY` (the app refuses to start without it), and set `DATABASE_URL` for PostgreSQL
@@ -63,6 +63,62 @@ Set `AI_API_KEY` (and optionally `AI_API_URL`, `AI_MODEL`). Defaults target the 
 **anonymized, structured** summary is sent (pseudonymous subject ID, indicator names, weights, numeric facts — no
 user IDs, resource paths or device IDs). Without a key, or if the call fails, everything still works and the alert
 shows the deterministic evidence with no narrative.
+
+### Case ownership
+
+An alert is a case, identified as **Case #<alert id>**. Ownership is separate from the
+three case statuses: Open, Under investigation and Closed. On the Alerts page, click
+any case tile to inspect its read-only detail view. Analysts can claim an unowned,
+non-closed case with **Assign to me**; **Investigate** then opens `/my-cases/<id>`.
+`/my-cases` lists the analyst's cases, summary counts, age, status and severity filters.
+The sidebar badge counts Open and Under investigation cases.
+
+Only the owner analyst can change status, add notes or request an AI explanation,
+and the interactive controls appear only in the My cases workspace. Status changes
+require confirmation. Releasing a non-closed case requires a reason of at least
+three characters; Under investigation returns to Open. Closed cases cannot be
+claimed or released, but their owner can still work them or change status in the
+workspace. Administrators can assign/reassign any case, including closed cases,
+and inspect team workload, but cannot change status, add notes or request case
+explanations. The existing automatic explanation background task is unchanged.
+Only administrators can run evaluation; analysts can still view the results.
+
+All permissions are enforced by the API. Assignment uses a unique `alert_id` to
+resolve concurrent claims. Existing table columns are unchanged: startup's
+`create_all` adds only `alert_assignments` and `case_events`. No reseeding or manual
+migration is required. Case events are written through `app.cases.record_event`;
+ownership actions, status changes and detector lifecycle changes are also audited.
+
+Owned cases and cases with event history are retained when re-scoring removes an
+incident. Nearby replacement incidents within the scoring window do not create
+duplicate investigations: the original case identity and evidence remain intact,
+and an owned case records `no_longer_detected` once. If its original incident start
+is detected again it records `redetected`. The detail page displays the detector
+state as a banner without introducing another case status. Detection, baseline,
+scoring and AI logic are unchanged.
+
+Deleting an analyst releases their non-closed cases to the queue and records the
+reason `owner account deleted`; closed cases retain the historical owner username.
+The Accounts page shows each analyst's active case count and warns before deletion.
+Workload ages use current UTC time, not the dataset's newest event. Critical/High
+workload counts cover active cases. The last-seven-day closure count uses the latest
+closing status event, with the alert's update time as a fallback for legacy cases.
+My cases summaries cover all of the caller's cases even when the list has a status filter.
+
+Ownership endpoints:
+
+- `POST /api/alerts/{id}/claim` (analyst)
+- `POST /api/alerts/{id}/release` with `{ "reason": "..." }` (owner analyst)
+- `POST /api/alerts/{id}/assign` with `{ "owner": "analyst_username" }` (admin)
+- `GET /api/my-cases?status=open` (analyst; status optional)
+- `GET /api/team/workload` (admin)
+- `GET /api/alerts/{id}/events` (staff; oldest first)
+
+`GET /api/alerts` supports `owner=me`, `owner=unassigned` or an analyst username;
+`sort_by=owner` and `then_by=owner` work with existing sorting. Unassigned owners
+sort as empty strings, and alert ID remains the final tie-breaker. The owner filter,
+other alert filters and sorting persist in the URL. Existing response keys remain
+available; `owner`, `assigned_at` and `detection_state` are additive fields.
 
 ### Feeding your own telemetry
 ```bash

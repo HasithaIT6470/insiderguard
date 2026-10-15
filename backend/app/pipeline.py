@@ -8,7 +8,7 @@ import pandas as pd
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.orm import Session
 
-from . import config
+from . import cases, config
 from .engine import (
     build_series,
     categorize,
@@ -20,6 +20,7 @@ from .models import (
     Alert,
     Baseline,
     CaseNote,
+    CaseEvent,
     Detection,
     Event,
     Honeytoken,
@@ -30,6 +31,7 @@ from .models import (
     utcnow,
 )
 from .normalize import normalize_record
+from .security import audit
 
 
 # --------------------------------------------------------------------------- configuration
@@ -160,20 +162,49 @@ def _process_user(db: Session, uid: str, cfg: dict, honey: set[str]) -> None:
 def _sync_alerts(db: Session, uid: str, incidents: list[dict], cfg: dict) -> None:
     """Upsert alerts keyed by (user, incident start) so case status/notes/narratives survive re-scoring."""
     existing = {a.start_time: a for a in db.scalars(select(Alert).where(Alert.user_id == uid))}
+    assignments = cases.owners_for(db, [a.id for a in existing.values()])
+    history_ids = set(db.scalars(select(CaseEvent.alert_id).where(
+        CaseEvent.alert_id.in_([a.id for a in existing.values()])).distinct()))
+    states = cases.detection_states(db, [a.id for a in existing.values()])
     seen = set()
+    shifted = {}
+    exact_starts = {inc["start_time"] for inc in incidents}
+    gap = timedelta(hours=float(cfg["score_window_hours"]))
     for inc in incidents:
-        seen.add(inc["start_time"])
         alert = existing.get(inc["start_time"])
+        if alert is None:
+            # Keep the original case identity/evidence when its incident start shifts.
+            # A nearby replacement must not create a duplicate investigation.
+            candidates = [a for start, a in existing.items() if a.id not in seen and a.id not in shifted and start not in exact_starts
+                          and (a.id in assignments or a.id in history_ids)
+                          and inc["start_time"] <= a.last_time + gap and inc["last_time"] >= a.start_time - gap]
+            if candidates:
+                alert = min(candidates, key=lambda a: (abs((a.start_time - inc["start_time"]).total_seconds()), a.id))
+                shifted[alert.id] = {"reason": "incident start shifted", "from": alert.start_time.isoformat(),
+                                     "to": inc["start_time"].isoformat()}
+                continue
         if alert is None:
             alert = Alert(user_id=uid, start_time=inc["start_time"], status="open", narrative_status="none")
             db.add(alert)
+        if states.get(alert.id) == "no_longer_detected":
+            cases.record_event(db, alert, "redetected", "system")
+            audit(db, "system", "case_redetected", str(alert.id))
         alert.last_time = inc["last_time"]
         alert.peak_score = inc["peak_score"]
         alert.category = categorize(inc["peak_score"], cfg)
         alert.breakdown = inc["breakdown"]
         alert.updated_at = utcnow()
-    for start, alert in existing.items():
-        if start not in seen and alert.status == "open" and not alert.narrative:
+        db.flush()
+        seen.add(alert.id)
+    for alert in existing.values():
+        if alert.id in seen:
+            continue
+        if alert.id in assignments:
+            if states.get(alert.id) != "no_longer_detected":
+                detail = shifted.get(alert.id, {})
+                cases.record_event(db, alert, "no_longer_detected", "system", detail)
+                audit(db, "system", "case_no_longer_detected", str(alert.id), detail)
+        elif alert.id not in history_ids and alert.status == "open" and not alert.narrative:
             has_notes = db.scalar(select(func.count()).select_from(CaseNote).where(CaseNote.alert_id == alert.id))
             if not has_notes:
                 db.delete(alert)

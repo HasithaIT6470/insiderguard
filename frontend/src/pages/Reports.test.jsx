@@ -125,6 +125,6 @@ it('renders summary charts, groups, and investigation links', async () => {
   expect(screen.getByRole('img', { name: 'Alerts by day' })).toBeInTheDocument()
   expect(screen.getByRole('img', { name: 'Top indicators' })).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: 'Grouped by department' })).toBeInTheDocument()
-  expect(screen.getByRole('link', { name: 'Alert #7' })).toHaveAttribute('href', '/alerts/7')
+  expect(screen.getByRole('link', { name: 'Case #7' })).toHaveAttribute('href', '/alerts/7')
   expect(screen.getAllByRole('link', { name: 'u1' })[0]).toHaveAttribute('href', '/users/u1')
 })

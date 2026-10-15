@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { Activity, BarChart3, ExternalLink, FlaskConical, LayoutDashboard, LogOut, Menu, ShieldCheck, Siren, Users, X } from 'lucide-react'
-import { Link, NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
-import { getAuth, setAuth } from './api'
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { api, getAuth, setAuth } from './api'
+import { useLoad } from './components.jsx'
 import Login from './pages/Login.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import RiskDetail from './pages/RiskDetail.jsx'
@@ -11,12 +12,23 @@ import Evaluation from './pages/Evaluation.jsx'
 import Reports from './pages/Reports.jsx'
 import Accounts from './pages/Accounts.jsx'
 import Profile from './pages/Profile.jsx'
+import MyCases from './pages/MyCases.jsx'
 
 const AuthCtx = createContext(null)
 export const useAuth = () => useContext(AuthCtx)
 
 function Shell({ children }) {
   const { auth, logout } = useAuth()
+  const location = useLocation()
+  const mine = useLoad(() => auth.role === 'analyst' ? api.myCases() : Promise.resolve(null), [auth.username, auth.role, location.pathname])
+  useEffect(() => {
+    if (auth.role !== 'analyst') return
+    const update = () => mine.reload()
+    window.addEventListener('cases-updated', update)
+    window.addEventListener('focus', update)
+    const timer = window.setInterval(update, 30000)
+    return () => { window.removeEventListener('cases-updated', update); window.removeEventListener('focus', update); window.clearInterval(timer) }
+  }, [auth.role])
   const [menuOpen, setMenuOpen] = useState(false)
   const menuButton = useRef(null)
   const sidebar = useRef(null)
@@ -55,6 +67,7 @@ function Shell({ children }) {
   const links = [
     ['/', 'Dashboard', LayoutDashboard],
     ['/alerts', 'Alerts', Siren],
+    ...(auth.role === 'analyst' ? [['/my-cases', 'My cases', Users]] : []),
     ['/reports', 'Reports', BarChart3],
     ['/evaluation', 'Evaluation', FlaskConical],
     ['/telemetry', 'Telemetry & Honeytokens', Activity],
@@ -76,6 +89,7 @@ function Shell({ children }) {
           {links.map(([to, label, Icon]) => (
             <NavLink key={to} to={to} end={to === '/'} className="ig-nav-link" onClick={() => setMenuOpen(false)}>
               <Icon size={20} aria-hidden="true" /><span>{label}</span>
+              {to === '/my-cases' && <span className="badge bg-secondary" aria-label="Active cases">{(mine.data?.summary?.open || 0) + (mine.data?.summary?.under_investigation || 0)}</span>}
             </NavLink>
           ))}
           <a className="ig-nav-link" href="http://localhost:5175" target="_blank" rel="noopener noreferrer" onClick={() => setMenuOpen(false)} aria-label="Simulated Lab (opens in a new tab)">
@@ -101,6 +115,11 @@ function Protected({ children }) {
 function AdminOnly({ children }) {
   const { auth } = useAuth()
   return auth?.role === 'admin' ? children : <Navigate to="/" replace />
+}
+
+export function AnalystOnly({ children }) {
+  const { auth } = useAuth()
+  return auth?.role === 'analyst' ? children : <Navigate to="/alerts" replace />
 }
 
 export default function App() {
@@ -133,6 +152,8 @@ export default function App() {
         <Route path="/" element={<Protected><Dashboard /></Protected>} />
         <Route path="/alerts" element={<Protected><Alerts /></Protected>} />
         <Route path="/alerts/:id" element={<Protected><RiskDetail mode="alert" /></Protected>} />
+        <Route path="/my-cases" element={<Protected><AnalystOnly><MyCases /></AnalystOnly></Protected>} />
+        <Route path="/my-cases/:id" element={<Protected><AnalystOnly><RiskDetail mode="alert" editable /></AnalystOnly></Protected>} />
         <Route path="/users/:id" element={<Protected><RiskDetail mode="user" /></Protected>} />
         <Route path="/reports" element={<Protected><Reports /></Protected>} />
         <Route path="/evaluation" element={<Protected><Evaluation /></Protected>} />

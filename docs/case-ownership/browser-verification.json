@@ -1,0 +1,22 @@
+{
+  "database": "isolated temporary SQLite backup",
+  "api_port": 8002,
+  "case_id": 3,
+  "adminView": {
+    "workload": true,
+    "assignButtons": 20,
+    "ownerColumn": true
+  },
+  "analyst_claim": true,
+  "workspace_note": true,
+  "workspace_status_change": true,
+  "release_with_reason": true,
+  "readOnly": {
+    "statusControl": false,
+    "noteForm": false,
+    "explainButton": false,
+    "history": "Case event timeline\nclaimed analyst · Oct 15, 2026, 10:49 AM UTC\nUnassigned → analyst\nstatus changed analyst · Oct 15, 2026, 10:49 AM UTC\nopen → under_investigation\nreleased analyst · Oct 15, 2026, 10:49 AM UTC\nunder_investigation → open\nBrowser verification completed"
+  },
+  "analyst_evaluation_read_only": true,
+  "runtime_errors": []
+}
