@@ -1,6 +1,6 @@
 # InsiderGuard
 
-AI-assisted insider threat detection and data-exfiltration prevention — a lightweight UEBA prototype that implements the
+AI-assisted insider threat detection and data-exfiltration detection — a lightweight UEBA prototype that implements the
 *Software Stack Specification* (IE3092, Group 03). **Synthetic data only.** No real credentials, no automatic
 enforcement, no SIEM/XDR integration.
 
