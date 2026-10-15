@@ -348,3 +348,15 @@ The states are submitted → acknowledged → contacted → completed, with need
 Recommendations are **advisory text only**: the application cannot disable accounts or perform access reviews, HR actions or other enforcement. Admins can export the filtered queue to CSV; analysts can list and open only requests they filed. User overviews show a limited, PII-free escalation history to both roles, but full escalation details remain restricted to the filing analyst and administrators, including after case reassignment.
 
 Keep contact details out of escalation summaries, recommendations, messages and handling notes. Contact summaries are stored only in the admin-only employee contact log, linked to the escalation, and are excluded from escalation responses, CSV and audit details. Contact can be logged before a directory profile exists; administrators can view those records on the user's Contact log tab. No personal directory fields are joined into escalation responses.
+
+## Notifications
+
+The bell opens the Notifications page directly, with no dropdown. A red dot indicates unread items; the accessible label includes the count. Desktop and mobile share one unread-count poll every 30 seconds, paused while the tab is hidden. Inbox actions refresh the count immediately.
+
+Notifications are delivered to existing accounts at event time: analysts receive ownership and escalation handling updates; admins receive case activity, escalation submissions/replies/withdrawals, and unassigned High/Critical live alerts. Copy uses fixed text and case/escalation IDs, never employee profiles, case notes, contact summaries, messages or closing/reopening notes.
+
+Case and escalation delivery runs through their central event hooks. Delivery keys suppress duplicate observation of the same event while allowing distinct later reassignments and reopenings. Dismissal and 30-day retention do not reset those keys. Account deletion removes both the inbox and its delivery keys.
+
+Processing defaults to `silent=True`: seeds, CLI processing, recompute and rule/baseline rescoring do not send notifications. Only live event ingestion opts in. Existing alerts changing score do not count as new alerts. A live run with up to ten newly created unassigned High/Critical alerts sends individual notifications; a larger run sends **one summary instead of individual items**. Detection, scoring, baseline and AI logic are unchanged.
+
+Admin notification requests lazily check for open High/Critical alerts created more than 24 hours ago without an owner. Each admin receives at most one reminder per alert, even after dismissing it. Retention deletes inbox rows older than 30 days, with a database-backed checkpoint allowing the unread-count endpoint to run cleanup at most once per hour. Delivery keys are retained to preserve deduplication; these contain account usernames and event/alert identifiers, not notification text or employee data.

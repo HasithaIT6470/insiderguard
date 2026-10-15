@@ -62,12 +62,15 @@ def iso(value):
     return value.isoformat() if value else None
 
 
-def record_escalation_event(db, escalation, actor, action, from_status=None):
+def record_escalation_event(db, escalation, actor, action, from_status=None, *, silent=False):
     """Single status-history write point. Task 10 notification hooks belong here."""
     db.flush()
     event = EscalationEvent(escalation_id=escalation.id, actor=actor.username, role=actor.role,
                             action=action, from_status=from_status, to_status=escalation.status)
     db.add(event)
+    db.flush()
+    from .notifications import escalation_event
+    escalation_event(db, escalation, event, silent=silent)
     return event
 
 

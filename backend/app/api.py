@@ -13,7 +13,7 @@ from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, HTTPExcepti
 from fastapi.responses import Response
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
-from sqlalchemy import case, func, select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -29,6 +29,7 @@ from .reports import router as reports_router
 from .employees import router as employees_router
 from .user_overview import router as user_overview_router
 from .escalations import router as escalations_router
+from .notifications import router as notifications_router
 from .security import (
     ROLES, audit, create_token, get_current_user, hash_password, require_admin, require_analyst, require_staff, verify_password,
 )
@@ -38,6 +39,7 @@ router.include_router(reports_router)
 router.include_router(employees_router)
 router.include_router(user_overview_router)
 router.include_router(escalations_router)
+router.include_router(notifications_router)
 
 # --------------------------------------------------------------------------- helpers
 _login_failures: dict[str, list[float]] = defaultdict(list)
@@ -82,7 +84,7 @@ def _auto_explain(alert_ids: list[int]) -> None:
 
 def _after_ingest(res: dict, db: Session, bg: BackgroundTasks) -> dict:
     if res["accepted"]:
-        reprocess_users(db, res["affected_users"])
+        reprocess_users(db, res["affected_users"], silent=False)
         if ai.ai_configured():
             ids = [a.id for a in db.scalars(select(Alert).where(
                 Alert.user_id.in_(res["affected_users"]), Alert.narrative_status == "none",
@@ -189,6 +191,9 @@ def delete_account(account_id: int, db: Session = Depends(get_db), admin: User =
     username = target.username
     released = cases.release_account_cases(db, username, admin) if target.role == "analyst" else 0
     audit(db, admin, "delete_account", username, {"role": target.role, "released_cases": released})
+    from .models import Notification, NotificationReceipt
+    db.execute(delete(Notification).where(Notification.recipient == username))
+    db.execute(delete(NotificationReceipt).where(NotificationReceipt.recipient == username))
     db.delete(target)
     db.commit()
     return {"deleted": username}
@@ -700,7 +705,7 @@ def revoke_honeytoken(token_id: int, db: Session = Depends(get_db), admin: User 
 def _rescore_resource(db: Session, resource: str) -> None:
     users = [r[0] for r in db.execute(select(Event.user_id).where(Event.resource == resource).distinct())]
     if users:
-        reprocess_users(db, users)
+        reprocess_users(db, users, silent=True)
 
 
 # --------------------------------------------------------------------------- rules (3.4)
@@ -766,7 +771,7 @@ def update_rules(body: RulesIn, background: BackgroundTasks, db: Session = Depen
     audit(db, admin, "modify_rules", "rule_config", changes)
     db.commit()
     if any(key in config.DEFAULT_RULES for key in changes):
-        reprocess_users(db)  # thresholds changed -> rescore everyone (REQ-07-04)
+        reprocess_users(db, silent=True)  # thresholds changed -> rescore everyone (REQ-07-04)
     return {"changed": changes}
 
 
@@ -812,7 +817,7 @@ def audit_log(limit: int = Query(200, le=1000), actor: str | None = None, db: Se
 
 @router.post("/admin/recompute")
 def recompute(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    res = reprocess_users(db)
+    res = reprocess_users(db, silent=True)
     audit(db, admin, "recompute_all", "all", res)
     db.commit()
     return res

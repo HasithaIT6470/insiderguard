@@ -18,6 +18,8 @@ import UsersPage from './pages/Users.jsx'
 import UserProfile from './pages/UserProfile.jsx'
 import Escalations from './pages/Escalations.jsx'
 import TopBar from './components/TopBar.jsx'
+import NotificationBell, { useUnreadCount } from './components/NotificationBell.jsx'
+import Notifications from './pages/Notifications.jsx'
 
 const AuthCtx = createContext(null)
 export const useAuth = () => useContext(AuthCtx)
@@ -25,6 +27,7 @@ export const useAuth = () => useContext(AuthCtx)
 function Shell({ children }) {
   const { auth, logout } = useAuth()
   const location = useLocation()
+  const unread = useUnreadCount(auth.username)
   const escalations = useLoad(() => api.escalationSummary(), [auth.username, auth.role, location.pathname])
   useEffect(() => {
     const update = () => escalations.reload()
@@ -93,9 +96,11 @@ function Shell({ children }) {
       <a className="ig-skip-link" href="#main-content">Skip to content</a>
       <header className="ig-mobile-header">
         <span className="ig-brand"><ShieldCheck size={24} aria-hidden="true" />InsiderGuard</span>
+        <div className="d-flex align-items-center gap-2"><NotificationBell count={unread.count} />
         <button ref={menuButton} className="ig-menu-button" aria-label={menuOpen ? 'Close navigation' : 'Open navigation'} title={menuOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={menuOpen} aria-controls="sidebar-navigation" onClick={() => setMenuOpen(!menuOpen)}>
           {menuOpen ? <X size={22} /> : <Menu size={22} />}
         </button>
+        </div>
       </header>
       {menuOpen && <div className="ig-sidebar-backdrop" onClick={() => { setMenuOpen(false); menuButton.current?.focus() }} aria-hidden="true" />}
       <aside ref={sidebar} id="sidebar-navigation" className={`ig-sidebar${menuOpen ? ' is-open' : ''}`}>
@@ -117,7 +122,7 @@ function Shell({ children }) {
           <button className="ig-sign-out" onClick={logout}><LogOut size={18} aria-hidden="true" />Sign out</button>
         </div>
       </aside>
-      <main id="main-content" className="ig-main" tabIndex={-1}><TopBar />{children}</main>
+      <main id="main-content" className="ig-main" tabIndex={-1}><TopBar right={<NotificationBell count={unread.count} />} />{children}</main>
     </>
   )
 }
@@ -174,6 +179,7 @@ export default function App() {
         <Route path="/users/:id" element={<Protected><UserProfile /></Protected>} />
         <Route path="/escalations" element={<Protected><Escalations /></Protected>} />
         <Route path="/escalations/:id" element={<Protected><Escalations /></Protected>} />
+        <Route path="/notifications" element={<Protected><Notifications /></Protected>} />
         <Route path="/reports" element={<Protected><Reports /></Protected>} />
         <Route path="/evaluation" element={<Protected><Evaluation /></Protected>} />
         <Route path="/telemetry" element={<Protected><Telemetry /></Protected>} />

@@ -48,7 +48,7 @@ def main():
         res = ingest_records(db, events, "seed")
         print(f"ingested accepted={res['accepted']} rejected={res['rejected']}")
         t0 = time.time()
-        reprocess_users(db)
+        reprocess_users(db, silent=True)
         print(f"processed {len(res['affected_users'])} users in {time.time() - t0:.1f}s")
         ev = run_evaluation(db, run_by="seed")
         for mode, m in ev["modes"].items():

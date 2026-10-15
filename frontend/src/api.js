@@ -49,6 +49,12 @@ async function request(path, { method = 'GET', body, form, raw } = {}) {
 }
 
 export const api = {
+  notifications: (params = {}) => request(`/notifications?${new URLSearchParams(params)}`),
+  unreadCount: () => request('/notifications/unread-count'),
+  markRead: (id) => notificationAction(`/notifications/${id}/read`),
+  markUnread: (id) => notificationAction(`/notifications/${id}/unread`),
+  markAllRead: () => notificationAction('/notifications/read-all'),
+  dismissNotification: (id) => notificationAction(`/notifications/${id}`, 'DELETE'),
   me: () => request('/auth/me'),
   changePassword: (current_password, new_password) => request('/auth/change-password', { method: 'POST', body: { current_password, new_password } }),
   accounts: () => request('/auth/accounts'),
@@ -125,4 +131,11 @@ export const api = {
   completeEscalation: (id, handling_note) => request(`/escalations/${id}/complete`, { method: 'POST', body: { handling_note } }),
   withdrawEscalation: (id) => request(`/escalations/${id}/withdraw`, { method: 'POST' }),
   escalationsCsv: async (params = {}) => (await request(`/escalations?${new URLSearchParams({ ...params, format: 'csv' })}`, { raw: true })).blob(),
+}
+
+function notificationAction(path, method = 'POST') {
+  return request(path, { method }).then(result => {
+    window.dispatchEvent(new Event('notifications-updated'))
+    return result
+  })
 }

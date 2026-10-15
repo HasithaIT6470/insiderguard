@@ -186,6 +186,7 @@ def _sync_alerts(db: Session, uid: str, incidents: list[dict], cfg: dict) -> Non
                 shifted[alert.id] = {"reason": "incident start shifted", "from": alert.start_time.isoformat(),
                                      "to": inc["start_time"].isoformat()}
                 continue
+        newly_created = alert is None
         if alert is None:
             alert = Alert(user_id=uid, start_time=inc["start_time"], status="open", narrative_status="none")
             db.add(alert)
@@ -204,6 +205,8 @@ def _sync_alerts(db: Session, uid: str, incidents: list[dict], cfg: dict) -> Non
         alert.breakdown = inc["breakdown"]
         alert.updated_at = utcnow()
         db.flush()
+        if newly_created and "notification_new_alerts" in db.info:
+            db.info["notification_new_alerts"].append(alert)
         seen.add(alert.id)
     for alert in existing.values():
         if alert.id in seen:
@@ -219,15 +222,28 @@ def _sync_alerts(db: Session, uid: str, incidents: list[dict], cfg: dict) -> Non
                 db.delete(alert)
 
 
-def reprocess_users(db: Session, user_ids: list[str] | None = None) -> dict:
+def reprocess_users(db: Session, user_ids: list[str] | None = None, *, silent: bool = True) -> dict:
     cfg = load_config(db)
     honey = {h.resource for h in db.scalars(select(Honeytoken).where(Honeytoken.active.is_(True)))}
     if user_ids is None:
         user_ids = [r[0] for r in db.execute(select(Subject.user_id))]
-    for uid in user_ids:
-        _process_user(db, uid, cfg, honey)
-        db.flush()
-    db.commit()
+    previous_silent = db.info.get("notifications_silent", False)
+    previous_new = db.info.get("notification_new_alerts")
+    db.info["notifications_silent"] = silent
+    db.info["notification_new_alerts"] = []
+    try:
+        for uid in user_ids:
+            _process_user(db, uid, cfg, honey)
+            db.flush()
+        from .notifications import new_alerts
+        new_alerts(db, db.info["notification_new_alerts"], silent=silent)
+        db.commit()
+    finally:
+        db.info["notifications_silent"] = previous_silent
+        if previous_new is None:
+            db.info.pop("notification_new_alerts", None)
+        else:
+            db.info["notification_new_alerts"] = previous_new
     return {"users_processed": len(user_ids)}
 
 

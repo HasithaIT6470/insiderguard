@@ -8,13 +8,16 @@ from .models import Alert, AlertAssignment, AlertResolution, CaseEvent, User, ut
 from .security import audit
 
 
-def record_event(db, alert, action, actor, detail=None):
+def record_event(db, alert, action, actor, detail=None, *, silent=False):
     """Single case-event write point; future notification hooks belong here."""
     db.flush()  # New alerts need their persistent ID before the event is inserted.
     username = actor.username if isinstance(actor, User) else str(actor)
     role = actor.role if isinstance(actor, User) else "system"
     event = CaseEvent(alert_id=alert.id, action=action, actor=username, actor_role=role, detail=detail or {})
     db.add(event)
+    db.flush()
+    from .notifications import case_event
+    case_event(db, alert, event, silent=silent)
     return event
 
 

@@ -292,3 +292,35 @@ class EscalationEvent(Base):
     from_status = Column(String(24))
     to_status = Column(String(24), nullable=False)
     created_at = Column(DateTime, default=utcnow, nullable=False)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id = Column(Integer, primary_key=True)
+    recipient = Column(String(64), index=True, nullable=False)
+    type = Column(String(64), nullable=False)
+    title = Column(String(256), nullable=False)
+    message = Column(Text, nullable=False)
+    link = Column(String(512), nullable=False)
+    alert_id = Column(Integer)
+    escalation_id = Column(Integer)
+    severity = Column(String(16), default="info", nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    read_at = Column(DateTime)
+    __table_args__ = (Index("ix_notification_recipient_read", recipient, read_at),)
+
+
+class NotificationReceipt(Base):
+    """Delivery keys survive dismissal/retention so reminders cannot reappear."""
+    __tablename__ = "notification_receipts"
+    id = Column(Integer, primary_key=True)
+    recipient = Column(String(64), index=True, nullable=False)
+    type = Column(String(64), nullable=False)
+    delivery_key = Column(String(128), nullable=False)
+    __table_args__ = (UniqueConstraint("recipient", "type", "delivery_key", name="uq_notification_delivery"),)
+
+
+class NotificationMaintenance(Base):
+    __tablename__ = "notification_maintenance"
+    key = Column(String(32), primary_key=True)
+    last_run = Column(DateTime, nullable=False)

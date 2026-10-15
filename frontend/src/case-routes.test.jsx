@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import App from './App.jsx'
 import { api, setAuth } from './api'
 
-vi.mock('./api', async original => ({ ...await original(), api: { escalationSummary: vi.fn().mockResolvedValue({ open_count: 2, overdue_count: 1 }), myCases: vi.fn() } }))
+vi.mock('./api', async original => ({ ...await original(), api: { unreadCount: vi.fn().mockResolvedValue({ unread_count: 0 }), escalationSummary: vi.fn().mockResolvedValue({ open_count: 2, overdue_count: 1 }), myCases: vi.fn() } }))
 vi.mock('./pages/Alerts.jsx', () => ({ default: () => <h1>Alerts route</h1> }))
 
 afterEach(() => sessionStorage.clear())

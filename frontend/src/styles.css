@@ -337,3 +337,19 @@ body { background: #17191d; color: #e4e7ec; }
   .ig-topbar-right:empty { display: none; }
 }
 @media print { .ig-topbar { display: none; } }
+.ig-notification-bell { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; color: #c1d9ff; border-radius: 6px; text-decoration: none; }
+.ig-notification-bell:hover { color: white; background: #263348; }
+.ig-notification-bell:focus-visible { outline: 3px solid #93beff; outline-offset: 2px; }
+.ig-notification-dot { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 0 2px #17191d; }
+.notification-row { display: flex; align-items: center; gap: 12px; padding: 16px; border-bottom: 1px solid #30343b; }
+.notification-row:last-child { border-bottom: 0; }
+.notification-row.is-unread { background: rgba(37,99,235,.1); }
+.notification-open { display: flex; align-items: flex-start; gap: 14px; flex: 1; min-width: 0; text-align: left; color: inherit; background: transparent; border: 0; padding: 4px; border-radius: 4px; }
+.notification-open:hover { background: rgba(148,191,255,.06); }
+.notification-open:focus-visible { outline: 2px solid #93beff; }
+.notification-open > svg { flex-shrink: 0; margin-top: 2px; }
+.notification-copy { display: flex; flex-direction: column; gap: 5px; min-width: 0; overflow-wrap: anywhere; }
+.notification-copy time { color: #abb3bf; font-size: .8rem; }
+.notification-unread-dot { flex-shrink: 0; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: #60a5fa; }
+.notification-actions { display: flex; gap: 6px; }
+@media (max-width: 991.98px) { .ig-topbar-right { display: none; } .notification-row { padding: 12px 8px; gap: 6px; } .notification-actions { flex-direction: column; } }

@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import App, { useAuth } from './App.jsx'
 import { api, getAuth, setAuth } from './api'
 
-vi.mock('./api', async importOriginal => ({ ...await importOriginal(), api: { escalationSummary: vi.fn().mockResolvedValue({ open_count: 2, overdue_count: 1 }), me: vi.fn(), changePassword: vi.fn(), myCases: vi.fn().mockResolvedValue({ summary: { open: 0, under_investigation: 0 } }) } }))
+vi.mock('./api', async importOriginal => ({ ...await importOriginal(), api: { unreadCount: vi.fn().mockResolvedValue({ unread_count: 0 }), escalationSummary: vi.fn().mockResolvedValue({ open_count: 2, overdue_count: 1 }), me: vi.fn(), changePassword: vi.fn(), myCases: vi.fn().mockResolvedValue({ summary: { open: 0, under_investigation: 0 } }) } }))
 vi.mock('./pages/Alerts.jsx', () => ({ default: function AuthProbe() { const { auth } = useAuth(); return <h1>{auth.token}</h1> } }))
 
 afterEach(() => sessionStorage.clear())
