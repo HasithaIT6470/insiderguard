@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, Bell, CheckCheck, ChevronLeft, ChevronRight, RefreshCw, RotateCcw, Search, ShieldAlert } from 'lucide-react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { ArrowDown, ArrowUp, ArrowUpDown, Bell, CheckCheck, ChevronLeft, ChevronRight, RefreshCw, RotateCcw, Search, ShieldAlert } from 'lucide-react'
 import { api } from '../api'
 import { CategoryBadge, DISCLAIMER, ScoreBar, Status, STATUS_LABEL, fmt, useLoad } from '../components.jsx'
 
@@ -23,6 +23,7 @@ function SortHeader({ column, label, sort, onSort }) {
 }
 
 export default function Alerts() {
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const sort = Object.fromEntries(Object.entries(DEFAULT_SORT).map(([key, fallback]) => [key, searchParams.get(key) ?? fallback]))
   const [filters, setFilters] = useState({ query: '', status: '', category: '', department: '', tactic: '' })
@@ -92,15 +93,21 @@ export default function Alerts() {
           </div>
           {alerts.length >= LIMIT && <p className="alerts-limit" role="status">Summary and search cover the first {LIMIT.toLocaleString()} alerts in the selected sort order.</p>}
           <div className="table-responsive"><table className="table table-hover align-middle mb-0 alerts-table">
-            <thead><tr>{[['id', 'Alert'], ['user_id', 'User'], ['department', 'Department'], ['peak_score', 'Peak score'], ['category', 'Risk level'], ['status', 'Case status'], ['start_time', 'Started (UTC)'], ['indicator_count', 'Indicators']].map(([column, label]) => <SortHeader key={column} column={column} label={label} sort={sort} onSort={changeSort} />)}<th scope="col"><span className="visually-hidden">Investigation</span></th></tr></thead>
-            <tbody>{visible.map(a => <tr key={a.id}>
+            <thead><tr>{[['id', 'Alert'], ['user_id', 'User'], ['department', 'Department'], ['peak_score', 'Peak score'], ['category', 'Risk level'], ['status', 'Case status'], ['start_time', 'Started (UTC)'], ['indicator_count', 'Indicators']].map(([column, label]) => <SortHeader key={column} column={column} label={label} sort={sort} onSort={changeSort} />)}</tr></thead>
+            <tbody>{visible.map(a => <tr key={a.id} className="alerts-tile" tabIndex={0} aria-label={`Open alert ${a.id}`}
+              onClick={event => { if (!event.target.closest('a, button, input, select, textarea')) navigate(`/alerts/${a.id}`) }}
+              onKeyDown={event => {
+                if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+                  event.preventDefault()
+                  navigate(`/alerts/${a.id}`)
+                }
+              }}>
               <td><Link className="fw-semibold" to={`/alerts/${a.id}`}>Alert #{a.id}</Link></td><td><Link to={`/users/${encodeURIComponent(a.user_id)}`}>{a.user_id}</Link></td>
               <td>{a.department || 'Unassigned'}</td>
               <td><ScoreBar score={a.peak_score} category={a.category} /></td><td><CategoryBadge category={a.category} /></td>
               <td><span className={`alerts-status alerts-status-${a.status}`}>{STATUS_LABEL[a.status] || a.status}</span></td>
               <td className="alerts-date">{fmt(a.start_time)}</td>
               <td className="alerts-indicators">{(a.breakdown || []).length ? <><span className="text-muted">{a.breakdown.length} indicators</span><ul>{a.breakdown.slice(0, 3).map((b, i) => <li key={i}>{b.name}</li>)}</ul></> : <span className="text-muted">No indicators</span>}{a.breakdown?.length > 3 && <span className="text-muted">+{a.breakdown.length - 3} more</span>}</td>
-              <td><Link className="dash-investigate" to={`/alerts/${a.id}`} aria-label={`Investigate alert ${a.id}`} title={`Investigate alert ${a.id}`}><ArrowRight size={18} aria-hidden="true" /></Link></td>
             </tr>)}</tbody>
           </table></div>
           {!filtered.length && <div className="dash-empty"><Bell size={25} aria-hidden="true" /><p className="mt-2 mb-2">{hasFilters ? 'No alerts match these filters.' : 'No alerts recorded.'}</p>{hasFilters && <button className="btn btn-sm btn-outline-primary" onClick={clearFilters}>Clear filters</button>}</div>}

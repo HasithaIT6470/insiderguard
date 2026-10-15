@@ -43,8 +43,32 @@ it('combines filters and indicator search, then clears an empty result', async (
 function NavigationProbe() {
   const location = useLocation()
   const navigate = useNavigate()
-  return <><output aria-label="URL">{location.search}</output><button onClick={() => navigate(-1)}>Back</button></>
+  return <><output aria-label="URL">{location.search}</output><output aria-label="Path">{location.pathname}</output><button onClick={() => navigate(-1)}>Back</button></>
 }
+
+it('opens an alert by clicking anywhere on its tile and removes the investigate control', async () => {
+  render(<MemoryRouter initialEntries={['/alerts']}><Alerts /><NavigationProbe /></MemoryRouter>)
+  const tile = await screen.findByRole('row', { name: 'Open alert 1', exact: true })
+  expect(tile).toHaveAttribute('tabindex', '0')
+  expect(tile.querySelectorAll('td')).toHaveLength(8)
+  expect(screen.queryByRole('link', { name: /Investigate alert/ })).not.toBeInTheDocument()
+  fireEvent.click(tile.querySelector('.alerts-indicators'))
+  expect(screen.getByLabelText('Path')).toHaveTextContent('/alerts/1')
+})
+
+it.each(['Enter', ' '])('opens a focused alert tile with %s', async key => {
+  render(<MemoryRouter initialEntries={['/alerts']}><Alerts /><NavigationProbe /></MemoryRouter>)
+  const tile = await screen.findByRole('row', { name: 'Open alert 2', exact: true })
+  tile.focus()
+  fireEvent.keyDown(tile, { key })
+  expect(screen.getByLabelText('Path')).toHaveTextContent('/alerts/2')
+})
+
+it('preserves direct user-profile navigation inside an alert tile', async () => {
+  render(<MemoryRouter initialEntries={['/alerts']}><Alerts /><NavigationProbe /></MemoryRouter>)
+  fireEvent.click(await screen.findByRole('link', { name: 'user-1', exact: true }))
+  expect(screen.getByLabelText('Path')).toHaveTextContent('/users/user-1')
+})
 
 it('restores URL sort settings, supports None, and resets to the default order', async () => {
   render(<MemoryRouter initialEntries={['/alerts?sort_by=category&sort_dir=asc&then_by=status&then_dir=asc&keep=yes']}><Alerts /><NavigationProbe /></MemoryRouter>)

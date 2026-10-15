@@ -152,6 +152,12 @@ body { background: #17191d; color: #e4e7ec; }
 .alerts-indicators ul { margin: 0; padding-left: 16px; }
 .alerts-indicators li + li { margin-top: 3px; }
 .alerts-table td:first-child { min-width: 110px; }
+.alerts-table { border-collapse: separate; border-spacing: 0 6px; --bs-table-hover-bg: rgba(var(--bs-primary-rgb), .1); }
+.alerts-tile { cursor: pointer; }
+.alerts-tile td { border-top: 1px solid var(--bs-border-color); }
+.alerts-tile td:first-child { border-left: 1px solid var(--bs-border-color); border-radius: 6px 0 0 6px; }
+.alerts-tile td:last-child { border-right: 1px solid var(--bs-border-color); border-radius: 0 6px 6px 0; }
+.alerts-tile:focus-visible { outline: 2px solid #6597e2; outline-offset: 1px; }
 .alerts-pagination { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; padding-top: 18px; margin-top: 8px; border-top: 1px solid #e1e5eb; font-size: .78rem; color: #657084; }
 .alerts-pagination > div { display: flex; align-items: center; gap: 12px; }
 .alerts-pagination button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; }
