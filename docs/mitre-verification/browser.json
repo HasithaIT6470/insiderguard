@@ -1,0 +1,101 @@
+{
+  "checks": [
+    {
+      "scenario": "credential_attack",
+      "alert_id": 2,
+      "techniques": [
+        {
+          "id": "T1083",
+          "url": "https://attack.mitre.org/techniques/T1083/",
+          "label": "T1083 · File and Directory Discovery · Discovery · confidence medium",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "id": "T1039",
+          "url": "https://attack.mitre.org/techniques/T1039/",
+          "label": "T1039 · Data from Network Shared Drive · Collection · confidence medium",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "id": "T1078",
+          "url": "https://attack.mitre.org/techniques/T1078/",
+          "label": "T1078 · Valid Accounts · Initial Access · Persistence · Privilege Escalation · Stealth · confidence medium",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "id": "T1110",
+          "url": "https://attack.mitre.org/techniques/T1110/",
+          "label": "T1110 · Brute Force · Credential Access · confidence high",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ],
+      "mapping_tactics_present": true
+    },
+    {
+      "scenario": "new_device_exfil",
+      "alert_id": 3,
+      "techniques": [
+        {
+          "id": "T1039",
+          "url": "https://attack.mitre.org/techniques/T1039/",
+          "label": "T1039 · Data from Network Shared Drive · Collection · confidence medium",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "id": "T1074.001",
+          "url": "https://attack.mitre.org/techniques/T1074/001/",
+          "label": "T1074.001 · Local Data Staging · Collection · confidence low",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "id": "T1052.001",
+          "url": "https://attack.mitre.org/techniques/T1052/001/",
+          "label": "T1052.001 · Exfiltration over USB · Exfiltration · confidence medium",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "id": "T1083",
+          "url": "https://attack.mitre.org/techniques/T1083/",
+          "label": "T1083 · File and Directory Discovery · Discovery · confidence low",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ],
+      "mapping_tactics_present": true
+    },
+    {
+      "scenario": "honeytoken",
+      "alert_id": 7,
+      "techniques": [
+        {
+          "id": "T1083",
+          "url": "https://attack.mitre.org/techniques/T1083/",
+          "label": "T1083 · File and Directory Discovery · Discovery · confidence medium",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "id": "T1039",
+          "url": "https://attack.mitre.org/techniques/T1039/",
+          "label": "T1039 · Data from Network Shared Drive · Collection · confidence high",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ],
+      "mapping_tactics_present": true
+    }
+  ],
+  "mobile": {
+    "width": 390,
+    "bodyWidth": 390,
+    "chipCount": 8
+  },
+  "method": "Headless Chrome via DevTools Protocol; real Vite frontend and FastAPI backend"
+}

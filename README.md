@@ -86,10 +86,14 @@ bytes→MB are normalized; bad rows are rejected with structured per-field error
 6. **Risk scoring** — strongest indicator per category (time, volume, resource, denied, device, honeytoken) within a
    rolling window, summed, plus a correlation bonus (+10/+20/+25 for 2/3/4+ categories inside 60 min), capped at 100.
    Low < 25 ≤ Medium < 50 ≤ High < 75 ≤ Critical. Fully deterministic; the per-indicator breakdown is stored.
-7. **AI layer** — explanation only; clearly labelled as not the source of the score.
-8. **Dashboard / cases / reports / audit** — ranked users, evidence timeline, department trends, case status + notes,
+7. **ATT&CK mapping:** fired indicators carry technique IDs; the API resolves names, tactics and links
+   from the bundled Enterprise catalog. This is analyst context only and never changes scoring,
+   categories, incident grouping or evaluation. Alert details and timelines show technique chips;
+   the alert queue supports local technique search and tactic filtering.
+8. **AI layer** — explanation only; clearly labelled as not the source of the score.
+9. **Dashboard / cases / reports / audit** — ranked users, evidence timeline, department trends, case status + notes,
    period/department reports (JSON, CSV, print), audit log of analyst actions.
-9. **Evaluation** — precision, recall, F1, FPR, FNR and detection latency for Rule-Only, Anomaly-Only and Hybrid on the
+10. **Evaluation** — precision, recall, F1, FPR, FNR and detection latency for Rule-Only, Anomaly-Only and Hybrid on the
    labelled data set (unit: user-day after each user's learning window; latency = scenario start → first alert).
 
 ## API (Table 12 + supporting endpoints)
@@ -98,6 +102,68 @@ bytes→MB are normalized; bad rows are rejected with structured per-field error
 `GET /api/alerts` · `GET /api/dashboard/summary` · `POST /api/honeytokens` · `GET /api/evaluation/results`
 — plus auth, users list, alert detail/status/notes/explain, honeytoken list/revoke, rules, reports, audit,
 parse-errors, evaluation run. Interactive docs at `/docs`.
+
+`GET /api/mitre/mapping` (administrator or analyst) exposes the catalog version, attribution and
+the complete indicator mapping, including conditional branches and confidence levels.
+
+### ATT&CK mapping
+
+The offline Enterprise ATT&CK v20.0 catalog contains all 706 active techniques and subtechniques.
+Its names, tactic memberships and URLs come from the official versioned
+[MITRE STIX bundle](https://github.com/mitre-attack/attack-stix-data/blob/master/enterprise-attack/enterprise-attack-20.0.json).
+Revoked and deprecated techniques are excluded. No runtime network requests or database migrations
+are needed. Confidence describes the mapping heuristic, not a probability of malicious activity.
+
+| Indicator | Technique IDs and mapping confidence |
+|---|---|
+| `failed_logon_burst` | T1110 Brute Force (high) |
+| `repeated_denied_access` | T1083 File and Directory Discovery (medium) |
+| `restricted_resource_access` | T1039 Data from Network Shared Drive (medium) |
+| `bulk_download` | T1039 (medium); T1074.001 Local Data Staging (low) |
+| `download_volume_anomaly` | T1039 (medium); T1074.001 (low), against the personal baseline |
+| `access_volume_anomaly` | T1039 (medium); T1083 (low) |
+| `novel_resource_category` | T1083 (low) |
+| `off_hours_activity` | T1078 Valid Accounts (low); ATT&CK has no off-hours technique |
+| `anomalous_login_time` | T1078 (medium) |
+| `unknown_device` | T1052.001 Exfiltration over USB (medium) for removable-device IDs; otherwise T1078 (low) |
+| `honeytoken_interaction` | T1083 (medium); also T1039 (high) for file access, download or honeytoken events whose result is not denied |
+| `correlated_indicators` | None: this is a scoring bonus, not a behaviour |
+
+Removable-device matching uses the environment variable `REMOVABLE_DEVICE_PATTERN`, default
+`^(USB|EXT|RMV)[-_]` (case-sensitive), matching synthetic IDs such as `USB-EXT-1234`.
+This configuration is separate from numeric detection rules. Full per-indicator rationales are
+available from `/api/mitre/mapping` and the alert breakdown.
+
+To regenerate the catalog from the official versioned bundle, run from `backend`:
+
+```bash
+python scripts/build_mitre_catalog.py https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/enterprise-attack/enterprise-attack-20.0.json
+# A local downloaded STIX JSON path is also accepted as the first argument.
+```
+
+The build script uses only Python's standard library. It derives the ATT&CK version from
+`x-mitre-collection`, tactic order from the Enterprise matrix and IDs/URLs from MITRE external
+references. Output keys are sorted; `generated_at` records the build time. Review and commit the
+generated `backend/app/data/mitre_attack_enterprise.json` when updating the version.
+Persisted alerts and risk points pick up stored tags after authenticated
+`POST /api/admin/recompute`, or `python -m app.seed --reset` (which deletes existing lab data).
+Older alerts are mapped at read time in the meantime. Stored technique IDs take precedence;
+unknown IDs display as Unknown technique without a link. Resolved links use a trailing slash.
+
+Mapping is analyst context derived from indicator type; it does not affect the score and is not
+proof a technique was used. Mappings are indicator-level heuristics: an unfamiliar host does not
+establish account compromise, and a decoy hit does not establish intent. Exfiltration channels
+other than removable media are not observed, so most volume indicators map to Collection rather
+than Exfiltration. Multiple indicators contributing the same technique are combined in the alert
+summary, with the strongest mapping confidence and all contributing indicator names.
+
+Future work: administrator-editable mappings, ATT&CK filters and charts on Reports or Dashboard,
+a full matrix heat map, and MITRE D3FEND/Engage integration. ATT&CK-driven scoring changes are
+outside this feature's scope.
+
+© 2026 The MITRE Corporation. This work is reproduced and distributed with the permission of The MITRE Corporation.
+MITRE ATT&CK and ATT&CK are registered trademarks of The MITRE Corporation.
+See [MITRE ATT&CK Terms of Use](https://attack.mitre.org/resources/legal-and-branding/terms-of-use/).
 
 ### Report Filters
 
