@@ -19,6 +19,7 @@ JWT_ALGORITHM = "HS256"
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 MAX_BATCH_RECORDS = 200_000
+REMOVABLE_DEVICE_PATTERN = os.getenv("REMOVABLE_DEVICE_PATTERN", r"^(USB|EXT|RMV)[-_]")
 
 # Optional Generative AI API (explanations only; never affects the score).
 AI_API_KEY = os.getenv("AI_API_KEY", "")

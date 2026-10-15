@@ -8,6 +8,7 @@ import logging
 import httpx
 
 from . import config
+from .mitre import techniques_for
 
 log = logging.getLogger("insiderguard.ai")
 
@@ -21,6 +22,8 @@ SYSTEM_PROMPT = (
     "Using ONLY the structured evidence provided, write a short explanation (max 120 words) of why the "
     "alert was raised and what an analyst might check first. Do not change or re-estimate the score, do not "
     "speculate about motives, do not accuse the user, and state that the evidence is an investigative lead only."
+    " You may reference the ATT&CK technique IDs provided in the evidence. "
+    "Never introduce technique IDs that are not in the evidence."
 )
 
 
@@ -42,7 +45,8 @@ def anonymize_alert(alert, department_hint: bool = False) -> dict:
                          "daily_total_mb", "failures", "denials", "hour", "distinct_categories", "event_type")
                 and not (k == "observed" and d.get("metric") in ("device_usage", "resource_type"))}
         indicators.append({"category": item["category"], "indicator": item["name"], "source": item["source"],
-                           "weight": item["weight"], "facts": safe})
+                           "weight": item["weight"], "facts": safe,
+                           "attack_techniques": item.get("attack_techniques", techniques_for(item["name"], d))})
     return {
         "subject": pseudonym(alert.user_id),
         "risk_score": alert.peak_score,

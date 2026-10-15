@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 
+from .mitre import techniques_for
+
 SOURCES_BY_MODE = {
     "rule_only": {"rule"},
     "anomaly_only": {"anomaly"},
@@ -263,7 +265,7 @@ def score_window(inds: list[Indicator], now: datetime, mode: str, cfg: dict) -> 
             best[x.category] = x
     breakdown = [
         {"category": x.category, "name": x.name, "source": x.source, "weight": x.weight, "time": x.time.isoformat(),
-         "detail": x.detail}
+         "detail": x.detail, "attack_techniques": techniques_for(x.name, x.detail)}
         for x in sorted(best.values(), key=lambda i: -i.weight)
     ]
     total = sum(x.weight for x in best.values())
@@ -274,7 +276,7 @@ def score_window(inds: list[Indicator], now: datetime, mode: str, cfg: dict) -> 
         if bonus:
             breakdown.append({"category": "correlation", "name": "correlated_indicators", "source": "rule",
                               "weight": float(bonus), "time": now.isoformat(),
-                              "detail": {"distinct_categories": sorted(cats)}})
+                              "detail": {"distinct_categories": sorted(cats)}, "attack_techniques": []})
             total += bonus
     return round(min(100.0, total), 1), breakdown
 

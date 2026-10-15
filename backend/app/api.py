@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
-from . import ai, config
+from . import ai, config, mitre
 from .database import SessionLocal, get_db
 from .evaluation import run_evaluation
 from .models import (
@@ -45,7 +45,8 @@ def _alert_dict(a: Alert, dept: str | None = None, notes: list | None = None) ->
     out = {
         "id": a.id, "user_id": a.user_id, "department": dept, "start_time": _iso(a.start_time),
         "last_time": _iso(a.last_time), "peak_score": a.peak_score, "category": a.category,
-        "status": a.status, "breakdown": a.breakdown, "narrative": a.narrative,
+        "status": a.status, "breakdown": mitre.enrich_breakdown(a.breakdown), "narrative": a.narrative,
+        "attack": mitre.attack_summary(a.breakdown),
         "narrative_status": a.narrative_status,
         "narrative_disclaimer": ai.DISCLAIMER if a.narrative else None,
     }
@@ -291,7 +292,7 @@ def user_risk(user_id: str, db: Session = Depends(get_db), user: User = Depends(
     return {
         "user_id": user_id, "department": sub.department, "baseline_status": sub.baseline_status,
         "risk_score": r["score"] if r else 0.0, "risk_category": r["category"] if r else "Low",
-        "as_of": _iso(r["as_of"]) if r else None, "breakdown": r["breakdown"] if r else [],
+        "as_of": _iso(r["as_of"]) if r else None, "breakdown": mitre.enrich_breakdown(r["breakdown"] if r else []),
         "baseline": ({"status": base.status, "window_start": _iso(base.window_start),
                       "window_end": _iso(base.window_end), "event_count": base.event_count, **(base.stats or {})}
                      if base else None),
@@ -317,6 +318,7 @@ def user_timeline(user_id: str, start: datetime | None = None, end: datetime | N
     return [{
         "time": _iso(d.time), "source": d.source, "category": d.category, "indicator": d.name, "weight": d.weight,
         "detail": d.detail,
+        "attack": mitre.resolve(mitre.techniques_for(d.name, d.detail), d.name, d.detail),
         "event": ({"event_type": e.event_type, "resource": e.resource, "device_id": e.device_id,
                    "result": e.result, "volume_mb": e.volume_mb} if (e := events.get(d.event_id)) else None),
     } for d in dets]
@@ -606,6 +608,11 @@ def update_rules(body: RulesIn, background: BackgroundTasks, db: Session = Depen
     if any(key in config.DEFAULT_RULES for key in changes):
         reprocess_users(db)  # thresholds changed -> rescore everyone (REQ-07-04)
     return {"changed": changes}
+
+
+@router.get("/mitre/mapping")
+def mitre_mapping(user: User = Depends(require_staff)):
+    return mitre.mapping_table()
 
 
 # --------------------------------------------------------------------------- evaluation & audit (3.10)
