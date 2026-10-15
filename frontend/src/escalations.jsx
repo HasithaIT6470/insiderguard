@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { OriginLink as Link, useOriginNavigate as useNavigate } from './navigation.jsx'
 import { api } from './api'
 import { CaseDialog } from './cases.jsx'
 import { STATUS_LABEL } from './components.jsx'

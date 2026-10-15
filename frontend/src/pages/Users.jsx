@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { OriginLink as Link, useOriginNavigate as useNavigate } from '../navigation.jsx'
 import { useAuth } from '../App.jsx'
 import { api } from '../api'
 import { CategoryBadge, Status, fmt, useLoad } from '../components.jsx'

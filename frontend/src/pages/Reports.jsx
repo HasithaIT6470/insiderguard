@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { OriginLink as Link, useOriginNavigate as useNavigate } from '../navigation.jsx'
 import { Download, FileText, Printer, RotateCcw, ShieldAlert, X } from 'lucide-react'
 import { ArcElement, BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip } from 'chart.js'
 import { Bar, Doughnut } from 'react-chartjs-2'

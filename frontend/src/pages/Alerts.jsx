@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
+import { OriginLink as Link, useOriginNavigate as useNavigate } from '../navigation.jsx'
 import { ArrowDown, ArrowUp, ArrowUpDown, Bell, CheckCheck, ChevronLeft, ChevronRight, RefreshCw, RotateCcw, Search, ShieldAlert } from 'lucide-react'
 import { api } from '../api'
 import { useAuth } from '../App.jsx'

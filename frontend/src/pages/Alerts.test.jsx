@@ -49,7 +49,7 @@ it('combines filters and indicator search, then clears an empty result', async (
 function NavigationProbe() {
   const location = useLocation()
   const navigate = useNavigate()
-  return <><output aria-label="URL">{location.search}</output><output aria-label="Path">{location.pathname}</output><button onClick={() => navigate(-1)}>Back</button></>
+  return <><output aria-label="URL">{location.search}</output><output aria-label="Path">{location.pathname}</output><output aria-label="Navigation state">{JSON.stringify(location.state)}</output><button onClick={() => navigate(-1)}>Back</button></>
 }
 
 it('opens an alert by clicking anywhere on its tile and removes the investigate control', async () => {
@@ -74,6 +74,17 @@ it('preserves direct user-profile navigation inside an alert tile', async () => 
   render(<MemoryRouter initialEntries={['/alerts']}><Alerts /><NavigationProbe /></MemoryRouter>)
   fireEvent.click(await screen.findByRole('link', { name: 'user-1', exact: true }))
   expect(screen.getByLabelText('Path')).toHaveTextContent('/users/user-1')
+})
+
+it.each(['user link', 'case tile'])('keeps the filtered Alerts origin when opening a %s', async kind => {
+  const query = '?sort_by=category&sort_dir=asc&status=open&owner=me'
+  render(<MemoryRouter initialEntries={['/alerts' + query]}><Alerts /><NavigationProbe /></MemoryRouter>)
+  const tile = await screen.findByRole('row', { name: 'Open alert 1', exact: true })
+  fireEvent.click(kind === 'user link' ? within(tile).getByRole('link', { name: 'user-1' }) : tile.querySelector('.alerts-indicators'))
+  expect(JSON.parse(screen.getByLabelText('Navigation state').textContent).from).toEqual({ pathname: '/alerts', search: query, label: 'Alerts' })
+  fireEvent.click(screen.getByRole('button', { name: 'Back', exact: true }))
+  expect(screen.getByLabelText('URL')).toHaveTextContent(query)
+  await screen.findByRole('row', { name: 'Open alert 1', exact: true })
 })
 
 it('restores URL sort settings, supports None, and resets to the default order', async () => {

@@ -313,3 +313,27 @@ body { background: #17191d; color: #e4e7ec; }
 .escalation-needs_info { color: #704e00; background: #fff0bf; }
 .escalation-completed { color: #195d43; background: #d9f2e7; }
 .escalation-withdrawn { color: #566174; background: #edf0f5; }
+.ig-topbar { position: sticky; top: 0; z-index: 1030; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 64px; margin: -28px -28px 24px; padding: 12px 28px; background: #17191d; border-bottom: 1px solid #30343b; }
+.ig-breadcrumb-area { display: flex; align-items: center; gap: 20px; min-width: 0; }
+.ig-back-link { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 240px; flex-shrink: 1; font-size: .85rem; }
+.ig-back-link span, .ig-breadcrumb-list a, .ig-breadcrumb-list [aria-current] { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ig-breadcrumb-area nav { min-width: 0; }
+.ig-breadcrumb-list { display: flex; align-items: center; gap: 6px; list-style: none; padding: 0; margin: 0; font-size: .875rem; }
+.ig-breadcrumb-list li { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ig-breadcrumb-list li:last-child { flex-shrink: 1; }
+.ig-breadcrumb-list a, .ig-breadcrumb-list [aria-current] { max-width: 240px; }
+.ig-breadcrumb-list svg, .ig-back-link svg { flex-shrink: 0; }
+.ig-breadcrumb-list [aria-current] { color: #f3f5f8; }
+.ig-topbar-right { display: flex; align-items: center; flex-shrink: 0; margin-left: auto; }
+@media (max-width: 991.98px) {
+  .ig-topbar { top: 64px; margin: -24px -16px 20px; padding: 10px 16px; min-height: 64px; }
+  .ig-breadcrumb-area { flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; }
+  .ig-breadcrumb-list { font-size: .75rem; gap: 2px; width: 100%; }
+  .ig-breadcrumb-area nav { width: 100%; }
+  .ig-breadcrumb-list li { gap: 2px; }
+  .ig-breadcrumb-list a { max-width: 100px; }
+  .ig-breadcrumb-list [aria-current] { max-width: 180px; }
+  .ig-back-link { font-size: .75rem; max-width: 100%; }
+  .ig-topbar-right:empty { display: none; }
+}
+@media print { .ig-topbar { display: none; } }

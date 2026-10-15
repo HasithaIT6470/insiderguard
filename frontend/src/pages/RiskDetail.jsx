@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Navigate, useLocation, useParams } from 'react-router-dom'
+import { OriginLink as Link, useOriginNavigate as useNavigate } from '../navigation.jsx'
 import { BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, LineElement, PointElement, Tooltip } from 'chart.js'
 import { Bar } from 'react-chartjs-2'
 import { api } from '../api'

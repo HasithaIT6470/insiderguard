@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { Activity, BarChart3, ExternalLink, FlaskConical, LayoutDashboard, LogOut, Menu, ShieldCheck, Siren, Users, X } from 'lucide-react'
-import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { OriginLink as Link, linkState } from './navigation.jsx'
 import { api, getAuth, setAuth } from './api'
 import { useLoad } from './components.jsx'
 import Login from './pages/Login.jsx'
@@ -16,6 +17,7 @@ import MyCases from './pages/MyCases.jsx'
 import UsersPage from './pages/Users.jsx'
 import UserProfile from './pages/UserProfile.jsx'
 import Escalations from './pages/Escalations.jsx'
+import TopBar from './components/TopBar.jsx'
 
 const AuthCtx = createContext(null)
 export const useAuth = () => useContext(AuthCtx)
@@ -100,7 +102,7 @@ function Shell({ children }) {
         <Link className="ig-brand ig-sidebar-brand" to="/" onClick={() => setMenuOpen(false)}><ShieldCheck size={28} aria-hidden="true" />InsiderGuard</Link>
         <nav className="ig-navigation" aria-label="Main navigation">
           {links.map(([to, label, Icon]) => (
-            <NavLink key={to} to={to} end={to === '/'} className="ig-nav-link" onClick={() => setMenuOpen(false)}>
+            <NavLink key={to} to={to} state={linkState(location)} end={to === '/'} className="ig-nav-link" onClick={() => setMenuOpen(false)}>
               <Icon size={20} aria-hidden="true" /><span>{label}</span>
               {to === '/my-cases' && <span className="badge bg-secondary" aria-label="Active cases">{(mine.data?.summary?.open || 0) + (mine.data?.summary?.under_investigation || 0)}</span>}
               {to === '/escalations' && <span className={`badge ${escalations.data?.overdue_count ? 'bg-danger' : 'bg-secondary'}`} aria-label="Open escalations" title={`${escalations.data?.overdue_count || 0} overdue`}>{escalations.data?.open_count ?? '–'}</span>}
@@ -115,7 +117,7 @@ function Shell({ children }) {
           <button className="ig-sign-out" onClick={logout}><LogOut size={18} aria-hidden="true" />Sign out</button>
         </div>
       </aside>
-      <main id="main-content" className="ig-main" tabIndex={-1}>{children}</main>
+      <main id="main-content" className="ig-main" tabIndex={-1}><TopBar />{children}</main>
     </>
   )
 }

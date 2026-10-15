@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Link } from 'react-router-dom'
+import { OriginLink as Link } from './navigation.jsx'
 import { useAuth } from './App.jsx'
 import { api } from './api'
 import { OutcomeBadge, Status, STATUS_LABEL, fmt, useLoad } from './components.jsx'

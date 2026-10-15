@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
+import { OriginLink as Link } from '../navigation.jsx'
 import { useAuth } from '../App.jsx'
 import { api } from '../api'
 import { CategoryBadge, Status, STATUS_LABEL, fmt, useLoad } from '../components.jsx'

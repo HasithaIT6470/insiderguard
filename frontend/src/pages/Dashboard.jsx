@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { OriginLink as Link } from '../navigation.jsx'
 import { Activity, ArrowRight, Bell, RefreshCw, Search, ShieldAlert, Users } from 'lucide-react'
 import { ArcElement, BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip } from 'chart.js'
 import { Bar, Doughnut } from 'react-chartjs-2'

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Link, Navigate } from 'react-router-dom'
+import { Navigate } from 'react-router-dom'
+import { OriginLink as Link } from '../navigation.jsx'
 import { useAuth } from '../App.jsx'
 import { api } from '../api'
 import { CategoryBadge, OutcomeBadge, caseStatusLabel, ScoreBar, Status, STATUS_LABEL, fmt, useLoad } from '../components.jsx'
