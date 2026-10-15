@@ -88,8 +88,8 @@ bytes→MB are normalized; bad rows are rejected with structured per-field error
    Low < 25 ≤ Medium < 50 ≤ High < 75 ≤ Critical. Fully deterministic; the per-indicator breakdown is stored.
 7. **ATT&CK mapping:** fired indicators carry technique IDs; the API resolves names, tactics and links
    from the bundled Enterprise catalog. This is analyst context only and never changes scoring,
-   categories, incident grouping or evaluation. Alert details and timelines show technique chips;
-   the alert queue supports local technique search and tactic filtering.
+   categories, incident grouping or evaluation. Alert details show each technique ID once in the MITRE ATT&CK mapping section;
+   the alert queue supports local technique search and tactic filtering without displaying technique IDs.
 8. **AI layer** — explanation only; clearly labelled as not the source of the score.
 9. **Dashboard / cases / reports / audit** — ranked users, evidence timeline, department trends, case status + notes,
    period/department reports (JSON, CSV, print), audit log of analyst actions.

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, Bell, CheckCheck, ChevronLeft, ChevronRight, RefreshCw, RotateCcw, Search, ShieldAlert } from 'lucide-react'
 import { api } from '../api'
-import { AttackChips, CategoryBadge, DISCLAIMER, ScoreBar, Status, STATUS_LABEL, fmt, useLoad } from '../components.jsx'
+import { CategoryBadge, DISCLAIMER, ScoreBar, Status, STATUS_LABEL, fmt, useLoad } from '../components.jsx'
 
 const PAGE_SIZE = 20
 const LIMIT = 1000
@@ -99,7 +99,7 @@ export default function Alerts() {
               <td><ScoreBar score={a.peak_score} category={a.category} /></td><td><CategoryBadge category={a.category} /></td>
               <td><span className={`alerts-status alerts-status-${a.status}`}>{STATUS_LABEL[a.status] || a.status}</span></td>
               <td className="alerts-date">{fmt(a.start_time)}</td>
-              <td className="alerts-indicators">{(a.breakdown || []).length ? <><span className="text-muted">{a.breakdown.length} indicators</span><ul>{a.breakdown.slice(0, 3).map((b, i) => <li key={i}>{b.name}</li>)}</ul></> : <span className="text-muted">No indicators</span>}{a.breakdown?.length > 3 && <span className="text-muted">+{a.breakdown.length - 3} more</span>}<AttackChips techniques={alertTechniques(a)} /></td>
+              <td className="alerts-indicators">{(a.breakdown || []).length ? <><span className="text-muted">{a.breakdown.length} indicators</span><ul>{a.breakdown.slice(0, 3).map((b, i) => <li key={i}>{b.name}</li>)}</ul></> : <span className="text-muted">No indicators</span>}{a.breakdown?.length > 3 && <span className="text-muted">+{a.breakdown.length - 3} more</span>}</td>
               <td><Link className="dash-investigate" to={`/alerts/${a.id}`} aria-label={`Investigate alert ${a.id}`} title={`Investigate alert ${a.id}`}><ArrowRight size={18} aria-hidden="true" /></Link></td>
             </tr>)}</tbody>
           </table></div>

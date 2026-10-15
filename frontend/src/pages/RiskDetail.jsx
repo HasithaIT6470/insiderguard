@@ -3,14 +3,14 @@ import { Link, useParams } from 'react-router-dom'
 import { BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, LineElement, PointElement, Tooltip } from 'chart.js'
 import { Bar } from 'react-chartjs-2'
 import { api } from '../api'
-import { AttackChip, AttackChips, CategoryBadge, DISCLAIMER, ScoreBar, Status, STATUS_LABEL, fmt, useLoad } from '../components.jsx'
+import { AttackChip, CategoryBadge, DISCLAIMER, ScoreBar, Status, STATUS_LABEL, fmt, useLoad } from '../components.jsx'
 
 ChartJS.register(BarElement, CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Legend)
 
 function Breakdown({ items }) {
   return (
     <div className="table-responsive"><table className="table table-sm mb-0">
-      <thead><tr><th>Indicator</th><th>Category</th><th>Source</th><th>MITRE ATT&CK</th><th className="text-end">Weight</th></tr></thead>
+      <thead><tr><th>Indicator</th><th>Category</th><th>Source</th><th className="text-end">Weight</th></tr></thead>
       <tbody>
         {items.map((b, i) => (
           <tr key={i}>
@@ -22,7 +22,7 @@ function Breakdown({ items }) {
                 </div>
               )}
             </td>
-            <td>{b.category}</td><td>{b.source}</td><td><AttackChips techniques={b.attack} /></td><td className="text-end fw-semibold">+{b.weight}</td>
+            <td>{b.category}</td><td>{b.source}</td><td className="text-end fw-semibold">+{b.weight}</td>
           </tr>
         ))}
       </tbody>
@@ -35,17 +35,14 @@ function AttackMapping({ attack }) {
   return <section className="attack-mapping" aria-label="MITRE ATT&CK mapping">
     <h3 className="h6 mt-3">MITRE ATT&CK mapping</h3>
     <p className="small text-muted">Mapping is analyst context derived from indicator type; it does not affect the score and is not proof a technique was used.</p>
-    {(attack.tactics || []).map(tactic => <div key={tactic.id} className="mb-3">
-      <h4 className="h6">{tactic.name}</h4>
-      <ul className="list-unstyled mb-0">{(tactic.techniques || []).map(id => {
-        const technique = (attack.techniques || []).find(t => t.id === id)
-        return technique && <li key={id} className="mb-2">
-          <AttackChip technique={technique} /> <span>{technique.name}</span>
-          <div className="small text-muted">Confidence: {technique.confidence || 'unknown'} · Indicators: {(technique.indicators || []).join(', ')}</div>
-          {technique.rationale && <div className="small text-muted">{technique.rationale}</div>}
-        </li>
-      })}</ul>
-    </div>)}
+    <ul className="list-unstyled mb-0">{[...new Map((attack.techniques || []).map(t => [t.id, t])).values()].map(technique => (
+      <li key={technique.id} className="mb-3">
+        <AttackChip technique={technique} /> <span>{technique.name}</span>
+        <div className="small"><span>{(technique.tactics || []).map(tactic => tactic.name).join(', ')}</span></div>
+        <div className="small text-muted">Confidence: {technique.confidence || 'unknown'} · Indicators: {(technique.indicators || []).join(', ')}</div>
+        {technique.rationale && <div className="small text-muted">{technique.rationale}</div>}
+      </li>
+    ))}</ul>
     {!attack.techniques?.length && <p className="small text-muted">No mapped techniques.</p>}
     <p className="small text-muted">ATT&CK v{attack.attack_version} · {attack.attribution}</p>
   </section>
@@ -169,7 +166,7 @@ export default function RiskDetail({ mode }) {
           <Status loading={timeline.loading} error={timeline.error}>
             <div style={{ maxHeight: 420, overflowY: 'auto' }}>
               <table className="table table-sm mb-0">
-                <thead><tr><th>Time</th><th>Indicator</th><th>Source</th><th>Event</th><th>ATT&CK</th><th className="text-end">Weight</th></tr></thead>
+                <thead><tr><th>Time</th><th>Indicator</th><th>Source</th><th>Event</th><th className="text-end">Weight</th></tr></thead>
                 <tbody>
                   {(timeline.data || []).map((t, i) => (
                     <tr key={i}>
@@ -177,11 +174,10 @@ export default function RiskDetail({ mode }) {
                       <td>{t.indicator}</td>
                       <td><span className={`badge ${t.source === 'honeytoken' ? 'bg-danger' : t.source === 'anomaly' ? 'bg-info text-dark' : 'bg-secondary'}`}>{t.source}</span></td>
                       <td className="small mono">{t.event ? `${t.event.event_type}${t.event.volume_mb ? ` ${t.event.volume_mb}MB` : ''} ${t.event.resource || t.event.device_id || ''}` : '—'}</td>
-                      <td><AttackChips techniques={t.attack} /></td>
                       <td className="text-end">{t.weight}</td>
                     </tr>
                   ))}
-                  {timeline.data?.length === 0 && <tr><td colSpan={6} className="text-muted text-center py-3">No indicators fired for this user.</td></tr>}
+                  {timeline.data?.length === 0 && <tr><td colSpan={5} className="text-muted text-center py-3">No indicators fired for this user.</td></tr>}
                 </tbody>
               </table>
             </div>

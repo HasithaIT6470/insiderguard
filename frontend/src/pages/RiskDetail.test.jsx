@@ -33,7 +33,7 @@ it('shows technique links, ordered tactic context, confidence and attribution', 
   expect(within(section).getByText(/ATT&CK v20.0/)).toHaveTextContent(attribution)
   expect(within(section).getByText(/does not affect the score/)).toBeInTheDocument()
   const chips = await screen.findAllByRole('link', { name: 'T1110 · Brute Force · Credential Access · confidence high' })
-  expect(chips.length).toBeGreaterThanOrEqual(2)
+  expect(chips).toHaveLength(1)
   for (const chip of chips) {
     expect(chip).toHaveAttribute('href', 'https://attack.mitre.org/techniques/T1110/')
     expect(chip).toHaveAttribute('target', '_blank')
@@ -47,4 +47,21 @@ it('renders legacy responses without ATT&CK fields', async () => {
   renderAlert()
   expect(await screen.findByText('Score composition (deterministic)')).toBeInTheDocument()
   expect(screen.queryByRole('region', { name: 'MITRE ATT&CK mapping' })).not.toBeInTheDocument()
+})
+
+it('shows a technique once even when it belongs to multiple tactics and evidence rows', async () => {
+  const shared = { ...technique, id: 'T1078', name: 'Valid Accounts',
+    tactics: [{ id: 'TA0001', name: 'Initial Access' }, { id: 'TA0003', name: 'Persistence' }] }
+  api.alert.mockResolvedValue({ id: 1, user_id: 'u1', peak_score: 40, category: 'High', status: 'open',
+    breakdown: [{ name: 'off_hours_activity', category: 'time', source: 'rule', weight: 10, attack: [shared] }], notes: [],
+    attack: { attack_version: '20.0', attribution, techniques: [shared, shared],
+      tactics: shared.tactics.map(t => ({ ...t, techniques: ['T1078'] })) } })
+  api.userRisk.mockResolvedValue({ user_id: 'u1', risk_score: 40, risk_category: 'High',
+    breakdown: [{ name: 'off_hours_activity', category: 'time', source: 'rule', weight: 10, attack: [shared] }] })
+  api.userTimeline.mockResolvedValue([1, 2].map(() => ({ indicator: 'off_hours_activity', source: 'rule', weight: 10, attack: [shared] })))
+  renderAlert()
+  await screen.findByRole('region', { name: 'MITRE ATT&CK mapping' })
+  expect(screen.getAllByText('T1078', { exact: true })).toHaveLength(1)
+  expect(screen.getByText('Initial Access, Persistence')).toBeInTheDocument()
+  expect(screen.queryByRole('columnheader', { name: 'ATT&CK' })).not.toBeInTheDocument()
 })

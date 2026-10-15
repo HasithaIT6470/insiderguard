@@ -117,7 +117,8 @@ it.each(['T1110', 'Brute Force', 'Credential Access'])('searches ATT&CK context 
   fireEvent.change(screen.getByLabelText('Search alerts'), { target: { value: query } })
   expect(screen.getByRole('link', { name: 'Alert #1', exact: true })).toBeInTheDocument()
   expect(screen.queryByRole('link', { name: 'Alert #2', exact: true })).not.toBeInTheDocument()
-  expect(screen.getAllByRole('link', { name: /T1110 · Brute Force/ })).toHaveLength(1)
+  expect(screen.queryByRole('link', { name: /T1110 · Brute Force/ })).not.toBeInTheDocument()
+  expect(screen.queryByText('T1110', { exact: true })).not.toBeInTheDocument()
 })
 
 it('filters tactics locally and clears the selection without changing API parameters', async () => {
