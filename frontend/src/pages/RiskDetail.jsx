@@ -42,7 +42,7 @@ function AttackMapping({ attack }) {
     <p className="small text-muted">Mapping is analyst context derived from indicator type; it does not affect the score and is not proof a technique was used.</p>
     <ul className="list-unstyled mb-0">{[...new Map((attack.techniques || []).map(t => [t.id, t])).values()].map(technique => (
       <li key={technique.id} className="mb-3">
-        <AttackChip technique={technique} /> <span>{technique.name}</span>
+        <AttackChip technique={technique} /> <span className="attack-technique-name">{technique.name}</span>
         <div className="small"><span>{(technique.tactics || []).map(tactic => tactic.name).join(', ')}</span></div>
         <div className="small text-muted">Confidence: {technique.confidence || 'unknown'} · Indicators: {(technique.indicators || []).join(', ')}</div>
         {technique.rationale && <div className="small text-muted">{technique.rationale}</div>}
@@ -54,6 +54,7 @@ function AttackMapping({ attack }) {
 }
 
 function CasePanel({ alertId, query, editable }) {
+  const { auth } = useAuth() || {}
   const { data: a, loading, error, reload } = query
   const navigate = useNavigate()
   const events = useLoad(() => api.alertEvents(alertId), [alertId])
@@ -146,7 +147,7 @@ function CasePanel({ alertId, query, editable }) {
             <input className="form-control form-control-sm" placeholder="Add investigation note…" value={note} maxLength={4000} onChange={(e) => setNote(e.target.value)} aria-label="Investigation note" />
             <button className="btn btn-sm btn-primary" disabled={busy || !note.trim()}>Add</button>
           </form>}
-          {editable && <EscalateCase alert={a} onComplete={refresh} />}
+          {(editable || (auth?.role === 'analyst' && a.owner === auth.username)) && <EscalateCase alert={a} onComplete={refresh} />}
           {editable && a.status !== 'closed' && <button className="btn btn-sm btn-outline-danger mt-3" disabled={busy} onClick={() => setReleasing(true)}>Release case</button>}
           {releasing && <ReleaseDialog alertId={a.id} onClose={() => setReleasing(false)}
             onComplete={() => navigate(`/alerts/${a.id}`, { state: { notice: 'Case released back to the queue.' } })} />}

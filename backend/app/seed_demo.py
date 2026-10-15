@@ -25,6 +25,7 @@ from .security import audit, get_current_user, hash_password
 
 EXTRA_PASSWORDS = {'analyst2': 'DemoReview#23456', 'analyst3': 'DemoReview#34567'}
 DEFAULT_GUIDE = Path(__file__).resolve().parents[2] / 'docs' / 'DEMO_GUIDE.md'
+DEFAULT_README = Path(__file__).resolve().parents[2] / 'docs' / 'DEMO_README.md'
 WORKFLOW_MODELS = (User, EmployeeProfile, AlertAssignment, CaseEvent, CaseNote, AlertResolution,
                    Escalation, EscalationEvent, EscalationMessage, EmployeeContact, Notification, AuditLog, EvaluationRun)
 
@@ -209,7 +210,7 @@ def seed_notifications(db, cutoff):
     db.commit()
 
 
-def build_demo(db, *, seed=7, days=60, end=None, with_ai=False, guide_path=DEFAULT_GUIDE):
+def build_demo(db, *, seed=7, days=60, end=None, with_ai=False, guide_path=DEFAULT_GUIDE, readme_path=None):
     end = end or default_end()
     cutoff = datetime.combine(end, datetime.min.time())
     if db.scalar(select(Subject.user_id).limit(1)) or db.scalar(select(User.id).limit(1)):
@@ -271,6 +272,8 @@ def build_demo(db, *, seed=7, days=60, end=None, with_ai=False, guide_path=DEFAU
     guide = render_guide(db, credentials, metrics)
     if guide_path:
         guide_path = Path(guide_path); guide_path.parent.mkdir(parents=True, exist_ok=True); guide_path.write_text(guide, encoding='utf-8')
+    if readme_path:
+        readme_path = Path(readme_path); readme_path.parent.mkdir(parents=True, exist_ok=True); readme_path.write_text(guide, encoding='utf-8')
     return summary(db), guide
 
 
@@ -514,7 +517,7 @@ def main(argv=None):
                 if problems: raise ValueError('\n'.join(f'- {p}' for p in problems))
                 stats = summary(db)
             else:
-                stats, guide = build_demo(db, seed=args.seed, days=args.days, end=args.end, with_ai=args.with_ai)
+                stats, guide = build_demo(db, seed=args.seed, days=args.days, end=args.end, with_ai=args.with_ai, readme_path=DEFAULT_README)
             print(json.dumps(stats, indent=2, sort_keys=True))
             metric = db.scalar(select(EvaluationRun).order_by(EvaluationRun.id.desc()))
             if metric:
@@ -523,6 +526,7 @@ def main(argv=None):
             manifest = db.scalar(select(DemoSeedRun).order_by(DemoSeedRun.id.desc())).manifest
             print(f"Cheat sheet: assign Critical Case #{manifest['story_cases']['bulk'][0]}; claim Case #{manifest['story_cases']['weekend'][0]}; reopened history Case #{manifest['reopened_case']}; new hire u015; register u016.")
             print(f'Guide: {DEFAULT_GUIDE}')
+            print(f'Readme: {DEFAULT_README}')
             print('\033[92mPASS: demo verification passed (all consistency checks).\033[0m')
         except (ValueError, RuntimeError) as error:
             db.rollback()

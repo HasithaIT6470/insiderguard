@@ -26,6 +26,7 @@
 a.attack-chip:hover { background: #2b4879; color: #fff; text-decoration: underline; }
 a.attack-chip:focus-visible { outline: 2px solid #93beff; outline-offset: 2px; }
 .attack-mapping { overflow-wrap: anywhere; }
+.attack-technique-name { color: #d96b76; font-weight: 700; }
 .alerts-indicators > .attack-chips { display: flex; margin-top: 5px; }
 body { background: #17191d; color: #e4e7ec; }
 .ig-sidebar { position: fixed; inset: 0 auto 0 0; width: 252px; display: flex; flex-direction: column; background: #101215; border-right: 1px solid #30343b; z-index: 1040; overflow-y: auto; color: #fff; }
@@ -154,6 +155,8 @@ body { background: #17191d; color: #e4e7ec; }
 .alerts-table td:first-child { min-width: 110px; }
 .alerts-table { border-collapse: separate; border-spacing: 0 6px; --bs-table-hover-bg: rgba(var(--bs-primary-rgb), .1); }
 .alerts-tile { cursor: pointer; }
+.alerts-tile-unassigned td { background: #fff8e8; }
+.alerts-tile-unassigned:hover td { background: #fff1d2; }
 .alerts-tile td { border-top: 1px solid var(--bs-border-color); }
 .alerts-tile td:first-child { border-left: 1px solid var(--bs-border-color); border-radius: 6px 0 0 6px; }
 .alerts-tile td:last-child { border-right: 1px solid var(--bs-border-color); border-radius: 0 6px 6px 0; }

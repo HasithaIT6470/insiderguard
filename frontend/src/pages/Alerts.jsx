@@ -107,7 +107,7 @@ export default function Alerts() {
           {alerts.length >= LIMIT && <p className="alerts-limit" role="status">Summary and search cover the first {LIMIT.toLocaleString()} alerts in the selected sort order.</p>}
           <div className="table-responsive"><table className="table table-hover align-middle mb-0 alerts-table">
             <thead><tr>{[['id', 'Alert'], ['user_id', 'User'], ['department', 'Department'], ['peak_score', 'Peak score'], ['category', 'Risk level'], ['status', 'Case status'], ['owner', 'Owner'], ['start_time', 'Started (UTC)'], ['indicator_count', 'Indicators']].map(([column, label]) => <SortHeader key={column} column={column} label={label} sort={sort} onSort={changeSort} />)}<th scope="col">Actions</th></tr></thead>
-            <tbody>{visible.map(a => <tr key={a.id} className="alerts-tile" tabIndex={0} aria-label={`Open alert ${a.id}`}
+            <tbody>{visible.map(a => <tr key={a.id} className={`alerts-tile${a.owner ? '' : ' alerts-tile-unassigned'}`} tabIndex={0} aria-label={`Open alert ${a.id}`}
               onClick={event => { if (!event.target.closest('a, button, input, select, textarea')) navigate(`/alerts/${a.id}`) }}
               onKeyDown={event => {
                 if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {

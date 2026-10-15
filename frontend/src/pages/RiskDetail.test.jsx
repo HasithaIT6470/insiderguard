@@ -5,7 +5,7 @@ import RiskDetail from './RiskDetail.jsx'
 
 const authState = vi.hoisted(() => ({ role: 'analyst', username: 'analyst' }))
 vi.mock('../App.jsx', () => ({ useAuth: () => ({ auth: authState }) }))
-vi.mock('../api', () => ({ api: { alert: vi.fn(), userRisk: vi.fn(), userTimeline: vi.fn(), userActivity: vi.fn(), alertEvents: vi.fn(), claimAlert: vi.fn(), setStatus: vi.fn(), addNote: vi.fn(), explain: vi.fn(), releaseAlert: vi.fn() } }))
+vi.mock('../api', () => ({ api: { alert: vi.fn(), userRisk: vi.fn(), userTimeline: vi.fn(), userActivity: vi.fn(), alertEvents: vi.fn(), claimAlert: vi.fn(), setStatus: vi.fn(), addNote: vi.fn(), explain: vi.fn(), releaseAlert: vi.fn(), createEscalation: vi.fn() } }))
 vi.mock('react-chartjs-2', () => ({ Bar: () => <div>Chart</div> }))
 
 const attribution = '© 2026 The MITRE Corporation. This work is reproduced and distributed with the permission of The MITRE Corporation. MITRE ATT&CK and ATT&CK are registered trademarks of The MITRE Corporation.'
@@ -44,6 +44,12 @@ it('shows technique links, ordered tactic context, confidence and attribution', 
     expect(chip).toHaveAttribute('target', '_blank')
     expect(chip).toHaveAttribute('rel', 'noopener noreferrer')
   }
+})
+
+it('shows the escalation button for an owned case opened from Alerts', async () => {
+  api.alert.mockResolvedValue({ ...await api.alert(), owner: 'analyst' })
+  renderAlert()
+  expect(await screen.findByRole('button', { name: 'Escalate to admin' })).toBeEnabled()
 })
 
 it('renders legacy responses without ATT&CK fields', async () => {
