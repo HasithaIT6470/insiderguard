@@ -189,7 +189,7 @@ export default function RiskDetail({ mode, editable = false }) {
           {r && (
             <div className="card p-3 mb-3">
               <div className="d-flex justify-content-between">
-                <h2 className="h5">{r.user_id} · {r.department}</h2>
+                <h2 className="h5"><Link to={`/users/${encodeURIComponent(r.user_id)}`}>{r.user_id}</Link> · {r.department}</h2>
                 <CategoryBadge category={r.risk_category} />
               </div>
               <ScoreBar score={r.risk_score} category={r.risk_category} />

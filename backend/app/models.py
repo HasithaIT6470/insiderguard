@@ -4,6 +4,7 @@ from sqlalchemy import (
     JSON,
     Boolean,
     Column,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -212,3 +213,36 @@ class EvaluationRun(Base):
     created_at = Column(DateTime, default=utcnow)
     run_by = Column(String(64))
     results = Column(JSON, default=dict)
+
+
+class EmployeeProfile(Base):
+    __tablename__ = "employee_profiles"
+    id = Column(Integer, primary_key=True)
+    # No Subject foreign key: directory registration may precede log ingestion.
+    user_id = Column(String(64), unique=True, index=True, nullable=False)
+    full_name = Column(String(160), default="")
+    email = Column(String(254), default="")
+    phone = Column(String(20), default="")
+    job_title = Column(String(160), default="")
+    supervisor_name = Column(String(160), default="")
+    supervisor_email = Column(String(254), default="")
+    supervisor_phone = Column(String(20), default="")
+    employment_status = Column(String(16), default="active", nullable=False)
+    start_date = Column(Date)
+    location = Column(String(160), default="")
+    contact_notes = Column(Text, default="")
+    created_by = Column(String(64), nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_by = Column(String(64), nullable=False)
+    updated_at = Column(DateTime, default=utcnow, nullable=False)
+
+
+class EmployeeContact(Base):
+    __tablename__ = "employee_contacts"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String(64), index=True, nullable=False)
+    contacted_by = Column(String(64), nullable=False)
+    method = Column(String(16), nullable=False)
+    summary = Column(Text, nullable=False)
+    escalation_id = Column(Integer)
+    created_at = Column(DateTime, default=utcnow, nullable=False)

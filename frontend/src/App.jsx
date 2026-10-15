@@ -13,6 +13,8 @@ import Reports from './pages/Reports.jsx'
 import Accounts from './pages/Accounts.jsx'
 import Profile from './pages/Profile.jsx'
 import MyCases from './pages/MyCases.jsx'
+import UsersPage from './pages/Users.jsx'
+import UserProfile from './pages/UserProfile.jsx'
 
 const AuthCtx = createContext(null)
 export const useAuth = () => useContext(AuthCtx)
@@ -67,6 +69,7 @@ function Shell({ children }) {
   const links = [
     ['/', 'Dashboard', LayoutDashboard],
     ['/alerts', 'Alerts', Siren],
+    ['/users', 'Users', Users],
     ...(auth.role === 'analyst' ? [['/my-cases', 'My cases', Users]] : []),
     ['/reports', 'Reports', BarChart3],
     ['/evaluation', 'Evaluation', FlaskConical],
@@ -154,7 +157,8 @@ export default function App() {
         <Route path="/alerts/:id" element={<Protected><RiskDetail mode="alert" /></Protected>} />
         <Route path="/my-cases" element={<Protected><AnalystOnly><MyCases /></AnalystOnly></Protected>} />
         <Route path="/my-cases/:id" element={<Protected><AnalystOnly><RiskDetail mode="alert" editable /></AnalystOnly></Protected>} />
-        <Route path="/users/:id" element={<Protected><RiskDetail mode="user" /></Protected>} />
+        <Route path="/users" element={<Protected><UsersPage /></Protected>} />
+        <Route path="/users/:id" element={<Protected><UserProfile /></Protected>} />
         <Route path="/reports" element={<Protected><Reports /></Protected>} />
         <Route path="/evaluation" element={<Protected><Evaluation /></Protected>} />
         <Route path="/telemetry" element={<Protected><Telemetry /></Protected>} />

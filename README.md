@@ -324,3 +324,15 @@ REQ-08 → `ai.py` · REQ-09 → dashboard, `/api/reports/risk`, case endpoints 
 - Processing is synchronous per ingest batch (fine for the prototype's ~40k events; use a queue for larger loads).
 - Login throttling is in-memory per process; use a shared store behind multiple workers. Token is kept in
   `sessionStorage`; put the API behind HTTPS in any deployment.
+
+## Personal data handling
+
+Employee profiles and contact records are available only through administrator-only endpoints and tabs. Both administrators and analysts receive the same PII-free user activity overview; lists, case links and reports use log user IDs, while AI inputs use pseudonyms. Departments come from ingested logs, never from the employee directory. Analysts cannot access the directory API.
+
+Profile, directory and contact-log views are audited. Changes record field names or counts in audit details, never personal field values or contact summaries. Collect only the contact information needed for investigations. Profiles can be registered before logs arrive, and offboarding preserves their history; there is no delete endpoint.
+
+The demo SQLite database is **not encrypted at rest**. Protect database files, backups and directory CSV files, and check applicable local data-protection law before using real employee data.
+
+Directory CSV imports use the downloadable template, UTF-8 encoding, a 2 MB limit and at most 1,000 rows. Each valid row creates or updates a profile; invalid rows are reported by row number without echoing personal values. Omitted update fields are preserved. Blank CSV fields clear their corresponding values. Employment status must be one of the four directory statuses; case statuses remain unchanged. Profile and contact text rejects control characters, including newlines.
+
+User activity charts use UTC and dataset-relative windows: the last 30 calendar days for the heatmap and the last seven for recent daily averages, including zero-activity days. Device and event-type summaries cover all recorded activity. Pre-registered IDs have an empty activity overview until logs arrive. Completeness measures monitored IDs with a profile; pre-registrations do not inflate that percentage.

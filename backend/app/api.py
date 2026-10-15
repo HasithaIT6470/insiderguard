@@ -26,12 +26,16 @@ from .models import (
 )
 from .pipeline import current_risk, dataset_end, ingest_records, load_config, reprocess_users
 from .reports import router as reports_router
+from .employees import router as employees_router
+from .user_overview import router as user_overview_router
 from .security import (
     ROLES, audit, create_token, get_current_user, hash_password, require_admin, require_analyst, require_staff, verify_password,
 )
 
 router = APIRouter(prefix="/api")
 router.include_router(reports_router)
+router.include_router(employees_router)
+router.include_router(user_overview_router)
 
 # --------------------------------------------------------------------------- helpers
 _login_failures: dict[str, list[float]] = defaultdict(list)
@@ -273,6 +277,8 @@ def list_users(department: str | None = None, db: Session = Depends(get_db), use
     """Ranked list of users by current risk score and category (REQ-09-01)."""
     cfg = load_config(db)
     risk = current_risk(db, cfg)
+    from .models import EmployeeProfile
+    profile_ids = set(db.scalars(select(EmployeeProfile.user_id)))
     open_alerts = dict(db.execute(select(Alert.user_id, func.count()).where(Alert.status != "closed").group_by(Alert.user_id)).all())
     out = []
     for s in db.scalars(select(Subject)):
@@ -284,6 +290,8 @@ def list_users(department: str | None = None, db: Session = Depends(get_db), use
             "event_count": s.event_count, "risk_score": r["score"] if r else 0.0,
             "risk_category": r["category"] if r else "Low", "risk_as_of": _iso(r["as_of"]) if r else None,
             "open_alerts": open_alerts.get(s.user_id, 0),
+              "open_case_count": open_alerts.get(s.user_id, 0),
+              "has_profile": s.user_id in profile_ids, "last_seen": _iso(s.last_seen),
         })
     out.sort(key=lambda x: (-x["risk_score"], x["user_id"]))
     return out

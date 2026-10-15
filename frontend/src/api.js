@@ -64,6 +64,20 @@ export const api = {
   },
   summary: () => request('/dashboard/summary'),
   users: (department) => request(`/users${department ? `?department=${encodeURIComponent(department)}` : ''}`),
+  usersStats: () => request('/users/stats'),
+  userOverview: (id) => request(`/users/${encodeURIComponent(id)}/overview`),
+  adminEmployees: () => request('/admin/employees'),
+  adminEmployee: (id) => request(`/admin/employees/${encodeURIComponent(id)}`),
+  createEmployee: (body) => request('/admin/employees', { method: 'POST', body }),
+  updateEmployee: (id, body) => request(`/admin/employees/${encodeURIComponent(id)}`, { method: 'PUT', body }),
+  offboardEmployee: (id) => request(`/admin/employees/${encodeURIComponent(id)}/offboard`, { method: 'POST' }),
+  importEmployees: (file) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request('/admin/employees/import', { method: 'POST', form })
+  },
+  employeeContacts: (id) => request(`/admin/employees/${encodeURIComponent(id)}/contacts`),
+  addEmployeeContact: (id, body) => request(`/admin/employees/${encodeURIComponent(id)}/contacts`, { method: 'POST', body }),
   userRisk: (id) => request(`/users/${encodeURIComponent(id)}/risk`),
   userTimeline: (id) => request(`/users/${encodeURIComponent(id)}/timeline?limit=300`),
   userActivity: (id) => request(`/users/${encodeURIComponent(id)}/activity?days=60`),

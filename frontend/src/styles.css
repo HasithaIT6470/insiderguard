@@ -298,3 +298,14 @@ body { background: #17191d; color: #e4e7ec; }
 }
 @media (max-width: 1199.98px) { .dash-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dash-charts { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 575.98px) { .dash-metrics { gap: 10px; } .dash-metric { padding: 14px; } .dash-metric-label { font-size: .76rem; } .dash-metric-value { font-size: 1.65rem; } .dash-panel { padding: 14px; } .dash-case-strip { gap: 12px 20px; } .dash-case-strip a { margin-left: 0; } .dash-filters > .form-select { width: 100%; } .dash-trend-chart { height: 260px; } }
+.users-chart-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+.users-chart-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.user-tile { cursor: pointer; }
+.user-tile:focus-visible { outline: 2px solid #2563eb; outline-offset: -2px; }
+.employee-form { max-width: 850px; }
+.employee-value { white-space: pre-wrap; }
+.activity-heatmap { display: grid; grid-template-columns: 42px repeat(24, minmax(18px, 1fr)); gap: 4px; min-width: 620px; font-size: 11px; text-align: center; }
+.heatmap-row { display: contents; }
+.heatmap-cell { height: 24px; border-radius: 3px; border: 1px solid #e6eaf0; }
+@media (max-width: 1200px) { .users-chart-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .users-chart-grid, .users-chart-grid.two { grid-template-columns: 1fr; } }
