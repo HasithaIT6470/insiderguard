@@ -25,6 +25,14 @@ npm install
 npm run dev                         # UI on http://localhost:5173 (proxies /api to :8000)
 ```
 
+### Live pull demo
+
+The repository includes a self-contained synthetic integration demo that pulls
+audit records from a fictional Acme FileVault app into InsiderGuard through a
+checkpointed connector. It includes attack controls, simulated outages, and a
+live source-app console. See [demo/live_pull/README.md](demo/live_pull/README.md)
+for the architecture, setup commands, environment variables, and walkthrough.
+
 Development accounts (seeded only when `INSIDERGUARD_ENV != production`; override with
 `INSIDERGUARD_ADMIN_PASSWORD` / `INSIDERGUARD_ANALYST_PASSWORD`):
 
