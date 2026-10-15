@@ -4,7 +4,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Bell, CheckCheck, ChevronLeft, Chevron
 import { api } from '../api'
 import { useAuth } from '../App.jsx'
 import { CaseActions, TeamWorkload } from '../cases.jsx'
-import { CategoryBadge, DISCLAIMER, ScoreBar, Status, STATUS_LABEL, fmt, useLoad } from '../components.jsx'
+import { CategoryBadge, DISCLAIMER, OutcomeBadge, OUTCOME_LABEL, ScoreBar, Status, STATUS_LABEL, fmt, useLoad } from '../components.jsx'
 
 const PAGE_SIZE = 20
 const LIMIT = 1000
@@ -29,10 +29,10 @@ export default function Alerts() {
   const { auth } = useAuth() || {}
   const [searchParams, setSearchParams] = useSearchParams()
   const sort = Object.fromEntries(Object.entries(DEFAULT_SORT).map(([key, fallback]) => [key, searchParams.get(key) ?? fallback]))
-  const filterKeys = ['query', 'status', 'category', 'department', 'tactic', 'owner']
+  const filterKeys = ['query', 'status', 'category', 'department', 'tactic', 'owner', 'outcome']
   const filters = Object.fromEntries(filterKeys.map(key => [key, searchParams.get(key) || '']))
   const workload = useLoad(() => auth?.role === 'admin' ? api.teamWorkload() : Promise.resolve([]), [auth?.role])
-  const { data, loading, error, reload } = useLoad(() => api.alerts({ limit: LIMIT, ...sort, ...(filters.status ? { status: filters.status } : {}), ...(filters.category ? { category: filters.category } : {}), ...(filters.department ? { department: filters.department } : {}), ...(filters.owner ? { owner: filters.owner } : {}) }), [sort.sort_by, sort.sort_dir, sort.then_by, sort.then_dir, filters.status, filters.category, filters.department, filters.owner])
+  const { data, loading, error, reload } = useLoad(() => api.alerts({ limit: LIMIT, ...sort, ...(filters.status ? { status: filters.status } : {}), ...(filters.category ? { category: filters.category } : {}), ...(filters.department ? { department: filters.department } : {}), ...(filters.owner ? { owner: filters.owner } : {}), ...(filters.outcome ? { outcome: filters.outcome } : {}) }), [sort.sort_by, sort.sort_dir, sort.then_by, sort.then_dir, filters.status, filters.category, filters.department, filters.owner, filters.outcome])
   const [page, setPage] = useState(1)
   const [departments, setDepartments] = useState([])
   const alerts = data || []
@@ -86,6 +86,7 @@ export default function Alerts() {
           <div className="dash-panel-heading"><div><h2>Alert queue</h2><p>{alerts.length.toLocaleString()} loaded alerts</p></div>
           </div>
           <div className="dash-filters alerts-filters">
+            <select className="form-select form-select-sm" aria-label="Outcome" value={filters.outcome} onChange={e => updateFilter('outcome', e.target.value)}><option value="">All outcomes</option>{Object.entries(OUTCOME_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
             <select className="form-select form-select-sm" aria-label="Owner" value={filters.owner} onChange={e => updateFilter('owner', e.target.value)}>
               <option value="">All owners</option><option value="me">Mine</option><option value="unassigned">Unassigned</option>
               {auth?.role === 'admin' && (workload.data || []).map(a => <option key={a.username} value={a.username}>{a.username}</option>)}
@@ -116,7 +117,7 @@ export default function Alerts() {
               <td><Link className="fw-semibold" to={`/alerts/${a.id}`}>Case #{a.id}</Link></td><td><Link to={`/users/${encodeURIComponent(a.user_id)}`}>{a.user_id}</Link></td>
               <td>{a.department || 'Unassigned'}</td>
               <td><ScoreBar score={a.peak_score} category={a.category} /></td><td><CategoryBadge category={a.category} /></td>
-              <td><span className={`alerts-status alerts-status-${a.status}`}>{STATUS_LABEL[a.status] || a.status}</span></td>
+              <td><span className={`alerts-status alerts-status-${a.status}`}>{STATUS_LABEL[a.status] || a.status}</span>{a.status === 'closed' && <div className="mt-1"><OutcomeBadge outcome={a.outcome} /></div>}</td>
               <td>{a.owner || <span className="text-muted">Unassigned</span>}</td>
               <td className="alerts-date">{fmt(a.start_time)}</td>
               <td className="alerts-indicators">{(a.breakdown || []).length ? <><span className="text-muted">{a.breakdown.length} indicators</span><ul>{a.breakdown.slice(0, 3).map((b, i) => <li key={i}>{b.name}</li>)}</ul></> : <span className="text-muted">No indicators</span>}{a.breakdown?.length > 3 && <span className="text-muted">+{a.breakdown.length - 3} more</span>}</td>

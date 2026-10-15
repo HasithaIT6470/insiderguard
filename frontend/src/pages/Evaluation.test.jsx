@@ -1,12 +1,12 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { api } from '../api'
 import Evaluation from './Evaluation.jsx'
 
 const authState = vi.hoisted(() => ({ role: 'admin' }))
 vi.mock('../App.jsx', () => ({ useAuth: () => ({ auth: authState }) }))
 
-vi.mock('../api', () => ({ api: { evaluation: vi.fn(), runEvaluation: vi.fn() } }))
-vi.mock('react-chartjs-2', () => ({ Bar: props => <div role="img" aria-label={props['aria-label']} /> }))
+vi.mock('../api', () => ({ api: { evaluation: vi.fn(), evaluationFeedback: vi.fn(), runEvaluation: vi.fn() } }))
+vi.mock('react-chartjs-2', () => ({ Bar: props => <div role="img" aria-label={props['aria-label']} />, Doughnut: props => <div role="img" aria-label={props['aria-label']} /> }))
 
 const metrics = { precision: .8, recall: .9, f1: .847, false_positive_rate: .01, false_negative_rate: .1, scenarios_detected: 2, scenarios_total: 3, median_detection_latency_minutes: 0, mean_detection_latency_minutes: 2, tp: 9, fp: 1, fn: 1, tn: 89 }
 const result = {
@@ -19,6 +19,7 @@ const result = {
 beforeEach(() => {
   vi.clearAllMocks()
   authState.role = 'admin'
+  api.evaluationFeedback.mockResolvedValue({ closed_with_outcome: 0, legacy_closed: 0 })
   api.evaluation.mockResolvedValue(result)
   api.runEvaluation.mockResolvedValue(result)
 })
@@ -63,4 +64,28 @@ it('allows analysts to view results without offering evaluation execution', asyn
   expect(screen.queryByRole('button', { name: 'Run evaluation' })).not.toBeInTheDocument()
   expect(screen.getByText('Only administrators can run the evaluation')).toBeInTheDocument()
   expect(api.runEvaluation).not.toHaveBeenCalled()
+})
+
+it('shows a friendly operational feedback empty state apart from the lab results', async () => {
+  render(<Evaluation />)
+  const feedback = within(screen.getByRole('region', { name: 'Operational feedback (analyst verdicts)' }))
+  expect(await feedback.findByText('No analyst verdicts yet')).toBeInTheDocument()
+  expect(feedback.getByText(/missed attacks are never reviewed/)).toBeInTheDocument()
+  expect(await screen.findByText('Metrics comparison')).toBeInTheDocument()
+})
+
+it('renders verdict charts, precision, closure time and the threshold what-if table', async () => {
+  api.evaluationFeedback.mockResolvedValue({ closed_with_outcome: 4, legacy_closed: 1, alert_precision: .5,
+    counts_by_outcome: { true_positive: 2, false_positive: 1, benign_explained: 1 },
+    median_time_to_close_hours: 5, time_to_close_sample_count: 4,
+    top_indicators: { false_positive: [{ name: 'noisy_signal', count: 1 }], benign_explained: [] },
+    what_if: [{ threshold: 40, alerts_kept: 3, true_positives_kept: 1, true_positives_lost: 1, false_positives_removed: 0, benign_removed: 0, resulting_precision: 1/3 }] })
+  render(<Evaluation />)
+  const feedback = within(screen.getByRole('region', { name: 'Operational feedback (analyst verdicts)' }))
+  expect(await feedback.findByText('50.0%')).toBeInTheDocument()
+  expect(feedback.getByText('5 h')).toBeInTheDocument()
+  expect(feedback.getByRole('img', { name: 'Analyst verdict outcomes' })).toBeInTheDocument()
+  expect(feedback.getByRole('img', { name: 'Indicators in false positives' })).toBeInTheDocument()
+  expect(feedback.getByText('33.3%')).toBeInTheDocument()
+  expect(await screen.findByText('Metrics comparison')).toBeInTheDocument()
 })

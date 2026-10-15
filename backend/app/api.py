@@ -17,7 +17,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from . import ai, cases, config, mitre
+from . import ai, cases, config, mitre, resolutions
 from .database import SessionLocal, get_db
 from .evaluation import run_evaluation
 from .models import (
@@ -43,7 +43,7 @@ def _iso(dt):
 
 
 def _alert_dict(a: Alert, dept: str | None = None, notes: list | None = None,
-                assignment: AlertAssignment | None = None, detection_state: str | None = None) -> dict:
+                assignment: AlertAssignment | None = None, detection_state: str | None = None, resolution=None) -> dict:
     out = {
         "id": a.id, "user_id": a.user_id, "department": dept, "start_time": _iso(a.start_time),
         "last_time": _iso(a.last_time), "peak_score": a.peak_score, "category": a.category,
@@ -54,6 +54,8 @@ def _alert_dict(a: Alert, dept: str | None = None, notes: list | None = None,
         "owner": assignment.owner if assignment else None,
         "assigned_at": _iso(assignment.assigned_at) if assignment else None,
         "detection_state": detection_state,
+        "resolution": resolutions.as_dict(resolution) if a.status == "closed" else None,
+        "outcome": resolution.outcome if a.status == "closed" and resolution else None,
     }
     if notes is not None:
         out["notes"] = [{"id": n.id, "author": n.author, "note": n.note, "created_at": _iso(n.created_at)} for n in notes]
@@ -298,6 +300,7 @@ def user_risk(user_id: str, db: Session = Depends(get_db), user: User = Depends(
     alerts = db.scalars(select(Alert).where(Alert.user_id == user_id).order_by(Alert.start_time.desc())).all()
     assignments = cases.owners_for(db, [a.id for a in alerts])
     states = cases.detection_states(db, [a.id for a in alerts])
+    verdicts = resolutions.current_for(db, [a.id for a in alerts])
     audit(db, user, "view_user_risk", user_id)
     db.commit()
     return {
@@ -307,7 +310,7 @@ def user_risk(user_id: str, db: Session = Depends(get_db), user: User = Depends(
         "baseline": ({"status": base.status, "window_start": _iso(base.window_start),
                       "window_end": _iso(base.window_end), "event_count": base.event_count, **(base.stats or {})}
                      if base else None),
-        "alerts": [_alert_dict(a, sub.department, assignment=assignments.get(a.id), detection_state=states.get(a.id)) for a in alerts],
+        "alerts": [_alert_dict(a, sub.department, assignment=assignments.get(a.id), detection_state=states.get(a.id), resolution=verdicts.get(a.id)) for a in alerts],
         "note": "Risk scores are investigative leads only and are not proof of malicious intent.",
     }
 
@@ -368,7 +371,8 @@ def _owned_alert_dict(db, alert):
     subject = db.get(Subject, alert.user_id)
     return _alert_dict(alert, subject.department if subject else None,
                        assignment=cases.owners_for(db, [alert.id]).get(alert.id),
-                       detection_state=cases.detection_states(db, [alert.id]).get(alert.id))
+                       detection_state=cases.detection_states(db, [alert.id]).get(alert.id),
+                       resolution=resolutions.current_for(db, [alert.id]).get(alert.id))
 
 
 class ReleaseIn(BaseModel):
@@ -461,8 +465,9 @@ def my_cases(status: Literal["open", "under_investigation", "closed"] | None = N
                       .outerjoin(Subject, Subject.user_id == Alert.user_id)
                       .where(AlertAssignment.owner == user.username).order_by(Alert.start_time, Alert.id)).all()
     states = cases.detection_states(db, [a.id for a, _, _ in rows])
+    verdicts = resolutions.current_for(db, [a.id for a, _, _ in rows])
     now = utcnow()
-    return {"cases": [{**_alert_dict(a, department, assignment=assignment, detection_state=states.get(a.id)),
+    return {"cases": [{**_alert_dict(a, department, assignment=assignment, detection_state=states.get(a.id), resolution=verdicts.get(a.id)),
                         "age_hours": cases.age_hours(a, now)} for a, department, assignment in rows
                        if not status or a.status == status],
             "summary": cases.summarize([a for a, _, _ in rows], now)}
@@ -475,7 +480,7 @@ def team_workload(db: Session = Depends(get_db), admin: User = Depends(require_a
 
 @router.get("/alerts")
 def list_alerts(status: str | None = None, category: str | None = None, department: str | None = None,
-                user_id: str | None = None, owner: str | None = None, limit: int = Query(200, ge=1, le=1000),
+                user_id: str | None = None, owner: str | None = None, outcome: str | None = None, limit: int = Query(200, ge=1, le=1000),
                 sort_by: Literal['id', 'user_id', 'department', 'start_time', 'peak_score', 'category', 'status', 'indicator_count', 'owner'] = 'peak_score',
                 sort_dir: Literal['asc', 'desc'] = 'desc',
                 then_by: Literal['id', 'user_id', 'department', 'start_time', 'peak_score', 'category', 'status', 'indicator_count', 'owner', ''] | None = Query('start_time', description='Secondary column; empty disables secondary sorting'),
@@ -483,6 +488,10 @@ def list_alerts(status: str | None = None, category: str | None = None, departme
                 user: User = Depends(require_staff)):
     q = select(Alert, Subject.department, AlertAssignment).join(Subject, Subject.user_id == Alert.user_id).outerjoin(
         AlertAssignment, AlertAssignment.alert_id == Alert.id)
+    outcomes = resolutions.parse_outcomes(outcome)
+    if outcomes:
+        current = resolutions.current_query().subquery()
+        q = q.join(current, current.c.alert_id == Alert.id).where(current.c.outcome.in_(outcomes))
     if owner == "unassigned":
         q = q.where(AlertAssignment.id.is_(None))
     elif owner:
@@ -528,7 +537,8 @@ def list_alerts(status: str | None = None, category: str | None = None, departme
         expressions = [(columns[key].desc() if direction == 'desc' else columns[key].asc()) for key, direction in ordering]
         rows = db.execute(q.order_by(*expressions, Alert.id.asc()).limit(limit)).all()
     states = cases.detection_states(db, [a.id for a, _, _ in rows])
-    return [_alert_dict(a, d, assignment=assignment, detection_state=states.get(a.id)) for a, d, assignment in rows]
+    verdicts = resolutions.current_for(db, [a.id for a, _, _ in rows])
+    return [_alert_dict(a, d, assignment=assignment, detection_state=states.get(a.id), resolution=verdicts.get(a.id)) for a, d, assignment in rows]
 
 
 @router.get("/alerts/{alert_id}")
@@ -540,12 +550,16 @@ def get_alert(alert_id: int, db: Session = Depends(get_db), user: User = Depends
     notes = db.scalars(select(CaseNote).where(CaseNote.alert_id == a.id).order_by(CaseNote.id)).all()
     audit(db, user, "view_alert", str(a.id), {"score": a.peak_score})  # REQ-10-01: reviewing the score
     db.commit()
-    return _alert_dict(a, sub.department if sub else None, notes, cases.owners_for(db, [a.id]).get(a.id),
-                       cases.detection_states(db, [a.id]).get(a.id))
+    return {**_alert_dict(a, sub.department if sub else None, notes, cases.owners_for(db, [a.id]).get(a.id),
+                         cases.detection_states(db, [a.id]).get(a.id), resolutions.current_for(db, [a.id]).get(a.id)),
+            "resolution_history": resolutions.history_for(db, a.id)}
 
 
 class StatusIn(BaseModel):
     status: str = Field(pattern="^(open|under_investigation|closed)$")
+    outcome: str | None = None
+    note: str | None = None
+    reason: str | None = None
 
 
 class NoteIn(BaseModel):
@@ -556,12 +570,9 @@ class NoteIn(BaseModel):
 def update_alert(alert_id: int, body: StatusIn, db: Session = Depends(get_db), user: User = Depends(require_staff)):
     a = _case_or_404(db, alert_id)
     assignment = cases.require_owner(db, a, user)
-    old, a.status, a.updated_at = a.status, body.status, utcnow()
-    if old != body.status:
-        cases.record_event(db, a, "status_changed", user, {"from": old, "to": body.status})
-    audit(db, user, "change_case_status", str(a.id), {"from": old, "to": body.status})
+    resolutions.transition(db, a, user, assignment, body.status, body.outcome, body.note, body.reason)
     db.commit()
-    return _alert_dict(a, assignment=assignment)
+    return _owned_alert_dict(db, a)
 
 
 @router.post("/alerts/{alert_id}/notes", status_code=201)
@@ -582,7 +593,7 @@ def explain(alert_id: int, db: Session = Depends(get_db), user: User = Depends(r
     ok = ai.explain_alert(db, a)
     audit(db, user, "request_ai_explanation", str(a.id), {"ok": ok})
     db.commit()
-    return {**_alert_dict(a, assignment=assignment), "ai_available": ok}
+    return {**_owned_alert_dict(db, a), "ai_available": ok}
 
 
 # --------------------------------------------------------------------------- dashboard & reports
@@ -753,6 +764,11 @@ def mitre_mapping(user: User = Depends(require_staff)):
 
 
 # --------------------------------------------------------------------------- evaluation & audit (3.10)
+@router.get("/evaluation/feedback")
+def evaluation_feedback(db: Session = Depends(get_db), user: User = Depends(require_staff)):
+    return resolutions.feedback(db)
+
+
 @router.get("/evaluation/results")
 def evaluation_results(db: Session = Depends(get_db), user: User = Depends(require_staff)):
     run = db.scalar(select(EvaluationRun).order_by(EvaluationRun.id.desc()))

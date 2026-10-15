@@ -3,11 +3,11 @@ import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { useAuth } from './App.jsx'
 import { api } from './api'
-import { Status, fmt, useLoad } from './components.jsx'
+import { OutcomeBadge, Status, STATUS_LABEL, fmt, useLoad } from './components.jsx'
 
 export const notifyCasesChanged = () => window.dispatchEvent(new Event('cases-updated'))
 
-function CaseDialog({ title, onClose, children, busy }) {
+export function CaseDialog({ title, onClose, children, busy }) {
   const ref = useRef(null)
   useEffect(() => {
     const previous = document.activeElement
@@ -112,15 +112,29 @@ export function TeamWorkload({ query }) {
   </section>
 }
 
-export function CaseEvents({ events }) {
-  return <section className="mt-3" aria-label="Case event timeline"><h3 className="h6">Case event timeline</h3>
+export function CaseHistory({ events, resolutions = [] }) {
+  const history = [...(events.data || []).filter(e =>
+    !(e.action === 'resolved' && resolutions.some(r => r.id === e.detail?.resolution_id)) &&
+    !(e.action === 'status_changed' && ['resolved', 'reopened'].includes(e.detail?.transition)))
+    .map(e => ({ ...e, key: `event-${e.id}`, time: e.created_at })),
+  ...resolutions.map(r => ({ ...r, key: `resolution-${r.id}`, action: 'resolved', actor: r.resolved_by, time: r.resolved_at }))]
+  for (const r of resolutions) {
+    if (r.reopened_at && !(events.data || []).some(e => e.action === 'reopened' && e.detail?.resolution_id === r.id)) {
+      history.push({ key: `reopen-${r.id}`, action: 'reopened', actor: r.reopened_by, time: r.reopened_at, detail: { reason: r.reopen_reason } })
+    }
+  }
+  history.sort((a, b) => (a.time || '').localeCompare(b.time || '') || a.key.localeCompare(b.key))
+  return <section className="mt-3" aria-label="Case history"><h3 className="h6">Case history</h3>
     <Status loading={events.loading} error={events.error}>
-      <ol className="case-event-list">{(events.data || []).map(e => <li key={e.id}>
-        <strong>{e.action.replaceAll('_', ' ')}</strong> <span className="small text-muted">{e.actor} · {fmt(e.created_at)}</span>
-        {(e.detail?.from || e.detail?.to) && <div className="small">{e.detail.from || 'Unassigned'} → {e.detail.to || 'Unassigned'}</div>}
+      <ol className="case-event-list">{history.map(e => <li key={e.key}>
+        <strong>{e.action === 'updated_after_closure' ? 'Updated after closure' : e.action.replaceAll('_', ' ')}</strong> <span className="small text-muted">{e.actor} · {fmt(e.time)}</span>
+        {(e.outcome || e.detail?.outcome) && <div><OutcomeBadge outcome={e.outcome || e.detail.outcome} /></div>}
+        {e.note && <p className="case-resolution-note mb-1">{e.note}</p>}
+        {(e.detail?.from || e.detail?.to) && <div className="small">{STATUS_LABEL[e.detail.from] || e.detail.from || 'Unassigned'} → {STATUS_LABEL[e.detail.to] || e.detail.to || 'Unassigned'}</div>}
         {e.detail?.reason && <div className="small">{e.detail.reason}</div>}
+        {e.action === 'updated_after_closure' && <div className="small">Peak score: {e.detail?.old_peak_score} → {e.detail?.new_peak_score}. Last activity: {fmt(e.detail?.old_last_time)} → {fmt(e.detail?.new_last_time)}</div>}
       </li>)}</ol>
-      {events.data?.length === 0 && <p className="small text-muted">No case events yet.</p>}
+      {!history.length && <p className="small text-muted">No case history yet.</p>}
     </Status>
   </section>
 }

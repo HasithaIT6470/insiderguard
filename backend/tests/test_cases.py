@@ -122,7 +122,7 @@ def test_release_returns_case_to_queue_and_keeps_history(client, admin, operator
     assert r.status_code == 200 and r.json()["owner"] is None and r.json()["status"] == "open"
     assert events(client, aid, admin)[-1]["detail"]["from"] == "under_investigation"
     claim(client, aid, operators[0])
-    client.patch(f"/api/alerts/{aid}", json={"status": "closed"}, headers=operators[0][1])
+    client.patch(f"/api/alerts/{aid}", json={"status": "closed", "outcome": "true_positive", "note": "Confirmed synthetic policy violation"}, headers=operators[0][1])
     assert client.post(f"/api/alerts/{aid}/release", json={"reason": "Handoff"}, headers=operators[0][1]).status_code == 409
 
 
@@ -205,10 +205,10 @@ def test_deleting_analyst_releases_only_nonclosed_cases(client, admin, make_case
 
 def test_existing_schema_needs_only_new_tables():
     engine = create_engine("sqlite://")
-    old = [table for name, table in Base.metadata.tables.items() if name not in {"alert_assignments", "case_events"}]
+    old = [table for name, table in Base.metadata.tables.items() if name not in {"alert_assignments", "case_events", "alert_resolutions"}]
     Base.metadata.create_all(engine, tables=old)
     before = {t.name: [c["name"] for c in inspect(engine).get_columns(t.name)] for t in old}
     Base.metadata.create_all(engine)
-    assert {"alert_assignments", "case_events"} <= set(inspect(engine).get_table_names())
+    assert {"alert_assignments", "case_events", "alert_resolutions"} <= set(inspect(engine).get_table_names())
     assert before == {t.name: [c["name"] for c in inspect(engine).get_columns(t.name)] for t in old}
     engine.dispose()

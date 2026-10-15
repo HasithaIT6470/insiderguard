@@ -11,14 +11,15 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from .database import get_db
-from .models import Alert, Event, Subject, User, utcnow
+from . import cases, resolutions
+from .models import Alert, AlertAssignment, Event, Subject, User, utcnow
 from .pipeline import dataset_end
 from .security import audit, require_staff
 
 router = APIRouter()
 CATEGORIES = ['Low', 'Medium', 'High', 'Critical']
 STATUSES = ['open', 'under_investigation', 'closed']
-FIELDS = ['alert_id', 'user_id', 'department', 'start_time', 'peak_score', 'category', 'status', 'indicators']
+FIELDS = ['alert_id', 'user_id', 'department', 'start_time', 'peak_score', 'category', 'status', 'indicators', 'owner', 'outcome']
 
 
 def data_range(db):
@@ -54,6 +55,7 @@ def risk_report(
     start: date | None = None, end: date | None = None,
     department: str | None = Query(None, min_length=1, max_length=64),
     category: str | None = None, status: str | None = None,
+    outcome: str | None = None, owner: str | None = Query(None, min_length=1, max_length=64),
     min_score: float | None = Query(None, ge=0, le=100, allow_inf_nan=False),
     max_score: float | None = Query(None, ge=0, le=100, allow_inf_nan=False),
     user_id: str | None = Query(None, min_length=1, max_length=64),
@@ -64,17 +66,26 @@ def risk_report(
     format: Literal['json', 'csv'] = 'json', db: Session = Depends(get_db), user: User = Depends(require_staff),
 ):
     categories, statuses = choices(category, CATEGORIES, 'category'), choices(status, STATUSES, 'status')
+    outcomes = resolutions.parse_outcomes(outcome)
     if start and end and start > end:
         raise HTTPException(422, 'From date is after To date')
     if end == date.max:
         raise HTTPException(422, 'To date must be before 9999-12-31')
     if min_score is not None and max_score is not None and min_score > max_score:
         raise HTTPException(422, 'Minimum score must not exceed maximum score')
-    if any(value is not None and not value.strip() for value in [department, user_id, indicator]):
-        raise HTTPException(422, 'Department, user ID and indicator cannot be blank')
+    if any(value is not None and not value.strip() for value in [department, user_id, indicator, owner]):
+        raise HTTPException(422, 'Department, user ID, indicator and owner cannot be blank')
     lower = datetime.combine(start, time.min) if start else None
     upper = datetime.combine(end + timedelta(days=1), time.min) if end else None
     query = select(Alert, Subject.department).join(Subject, Subject.user_id == Alert.user_id)
+    query = query.outerjoin(AlertAssignment, AlertAssignment.alert_id == Alert.id)
+    if owner == 'unassigned':
+        query = query.where(AlertAssignment.id.is_(None))
+    elif owner:
+        query = query.where(AlertAssignment.owner == owner)
+    if outcomes:
+        current = resolutions.current_query().subquery()
+        query = query.join(current, current.c.alert_id == Alert.id).where(current.c.outcome.in_(outcomes))
     event_query = select(func.count()).select_from(Event)
     subject_query = select(Subject)
     if lower:
@@ -106,12 +117,18 @@ def risk_report(
     matches = db.execute(query.order_by(column.asc() if sort_dir == 'asc' else column.desc(), Alert.id.asc())).all()
     if indicator:
         matches = [(alert, dept) for alert, dept in matches if indicator in names(alert)]
+    assignments = cases.owners_for(db, [a.id for a, _ in matches])
+    verdicts = resolutions.current_for(db, [a.id for a, _ in matches])
+    outcomes_by_id = {aid: row.outcome for aid, row in verdicts.items()}
     filters = {'start': start.isoformat() if start else None, 'end': end.isoformat() if end else None,
                'department': department, 'category': ','.join(categories) if categories else None,
                'status': ','.join(statuses) if statuses else None, 'min_score': min_score, 'max_score': max_score,
-               'user_id': user_id, 'indicator': indicator, 'sort_by': sort_by, 'sort_dir': sort_dir, 'limit': limit, 'group_by': group_by}
+               'user_id': user_id, 'indicator': indicator, 'sort_by': sort_by, 'sort_dir': sort_dir, 'limit': limit, 'group_by': group_by,
+               'owner': owner, 'outcome': ','.join(outcomes) if outcomes else None}
     rows = [{'alert_id': alert.id, 'user_id': alert.user_id, 'department': dept, 'start_time': alert.start_time.isoformat(),
              'peak_score': alert.peak_score, 'category': alert.category, 'status': alert.status,
+             'owner': assignments[alert.id].owner if alert.id in assignments else None,
+             'outcome': outcomes_by_id.get(alert.id),
              'indicators': '; '.join(f"{item['name']}({item.get('weight', 0):g})" for item in alert.breakdown or [])}
             for alert, dept in matches[:limit]]
     generated_at = utcnow()
@@ -124,6 +141,7 @@ def risk_report(
         writer.writerows(rows)
         return Response(output.getvalue(), media_type='text/csv', headers={'Content-Disposition': f'attachment; filename=insiderguard_risk_report_{generated_at:%Y-%m-%d}.csv'})
     by_category, by_status, by_department, by_day, indicators = Counter(), Counter(), Counter(), Counter(), Counter()
+    by_outcome = {o: 0 for o in (*resolutions.OUTCOMES, 'no_outcome')}
     user_scores, groups = defaultdict(list), defaultdict(list)
     scores = []
     for alert, dept in matches:
@@ -131,6 +149,7 @@ def risk_report(
         scores.append(score)
         by_category[alert.category] += 1
         by_status[alert.status] += 1
+        by_outcome[outcomes_by_id.get(alert.id, 'no_outcome')] += 1
         by_department[dept or 'Unassigned'] += 1
         day = alert.start_time.date().isoformat()
         by_day[day] += 1
@@ -146,10 +165,11 @@ def risk_report(
     subjects = list(db.scalars(subject_query.where(Subject.user_id.in_(event_query.with_only_columns(Event.user_id).distinct()))))
     payload = {'generated_at': generated_at.isoformat(), 'filters': filters,
                'coverage': {'events_analysed': db.scalar(event_query), 'users_monitored': len(subjects), 'baselines_established': sum(subject.baseline_status == 'established' for subject in subjects)},
-               'alerts_by_category': dict(by_category), 'alerts': rows,
+               'alerts_by_category': dict(by_category), 'alerts_by_outcome': by_outcome, 'alerts': rows,
                'summary': {'total_alerts': len(matches), 'avg_peak_score': round(sum(scores) / len(scores), 2) if scores else 0,
                            'max_peak_score': max(scores, default=0), 'open_count': by_status['open'], 'closed_count': by_status['closed'],
                            'alerts_by_category': dict(by_category), 'alerts_by_status': dict(by_status), 'alerts_by_department': dict(by_department),
+                           'alerts_by_outcome': by_outcome,
                            'top_users': top_users, 'top_indicators': [{'name': name, 'count': count} for name, count in sorted(indicators.items(), key=lambda row: (-row[1], row[0]))[:8]],
                            'alerts_by_day': dict(sorted(by_day.items()))},
                'summary_scope': 'all_matching_alerts', 'data_range': data_range(db),

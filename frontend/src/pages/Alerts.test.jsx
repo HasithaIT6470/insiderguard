@@ -211,3 +211,20 @@ it('restores the owner filter from the URL and forwards owner sorting', async ()
   expect(screen.getByLabelText('Owner')).toHaveValue('me')
   expect(api.alerts).toHaveBeenCalledWith({ limit: 1000, owner: 'me', sort_by: 'owner', sort_dir: 'desc', then_by: '', then_dir: 'desc' })
 })
+
+it('shows closed case outcome badges and filters by outcome', async () => {
+  const rows = [
+    { ...mappedAlerts()[0], status: 'closed', owner: 'analyst', outcome: 'true_positive' },
+    { ...mappedAlerts()[1], status: 'closed', owner: 'another', outcome: null },
+  ]
+  api.alerts.mockImplementation(async params => params.outcome ? rows.filter(a => a.outcome === params.outcome) : rows)
+  render(<MemoryRouter><Alerts /></MemoryRouter>)
+  const first = within(await screen.findByRole('row', { name: 'Open alert 1', exact: true }))
+  expect(first.getByText('True positive')).toBeInTheDocument()
+  expect(first.getByText('analyst')).toBeInTheDocument()
+  expect(within(screen.getByRole('row', { name: 'Open alert 2', exact: true })).getByText('No outcome')).toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('Outcome'), { target: { value: 'true_positive' } })
+  await waitFor(() => expect(api.alerts).toHaveBeenLastCalledWith(expect.objectContaining({ outcome: 'true_positive' })))
+  expect(await screen.findByRole('link', { name: 'Case #1' })).toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: 'Case #2' })).not.toBeInTheDocument()
+})

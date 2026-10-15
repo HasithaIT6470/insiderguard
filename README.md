@@ -74,8 +74,9 @@ non-closed case with **Assign to me**; **Investigate** then opens `/my-cases/<id
 The sidebar badge counts Open and Under investigation cases.
 
 Only the owner analyst can change status, add notes or request an AI explanation,
-and the interactive controls appear only in the My cases workspace. Status changes
-require confirmation. Releasing a non-closed case requires a reason of at least
+and the interactive controls appear only in the My cases workspace. Closing requires
+an outcome and note; reopening requires a reason. Other status changes are immediate.
+Releasing a non-closed case requires a reason of at least
 three characters; Under investigation returns to Open. Closed cases cannot be
 claimed or released, but their owner can still work them or change status in the
 workspace. Administrators can assign/reassign any case, including closed cases,
@@ -119,6 +120,65 @@ Ownership endpoints:
 sort as empty strings, and alert ID remains the final tie-breaker. The owner filter,
 other alert filters and sorting persist in the URL. Existing response keys remain
 available; `owner`, `assigned_at` and `detection_state` are additive fields.
+
+### Case resolution and operational feedback
+
+Closing a case in My cases opens a dialog requiring one of **True positive** (real
+threat or policy violation), **False positive** (wrong or noisy detection), or
+**Benign/explained** (unusual but legitimate activity with context), plus a closing
+note of 15–4000 characters after trimming whitespace. Reopening to Open or Under
+investigation requires a reason of 5–4000 trimmed characters. Only the owner analyst
+can close or reopen; administrators remain read-only on case work. Moving between
+Open and Under investigation requires no dialog or extra fields.
+
+`PATCH /api/alerts/{id}` accepts `{status, outcome?, note?, reason?}`. Send `outcome`
+and `note` only when transitioning into Closed, and `reason` only when transitioning
+out of Closed. Non-null fields supplied for an unrelated transition are rejected
+with 422. A repeated status with no extra fields is a no-op for resolution history;
+changing a verdict requires reopening and closing again. Concurrent close/reopen
+requests use a status compare-and-set as well as ownership checks.
+
+The new `alert_resolutions` table retains every verdict and its closing note.
+Reopening stamps `reopened_at`, `reopened_by` and `reopen_reason`; it never deletes
+or overwrites the old verdict. The current resolution is the latest unreopened row
+on a currently closed case. Alert responses add `resolution` and `outcome`; detail
+responses also include `resolution_history`. The Alerts and My cases pages show
+outcome badges separately from status and owner. Older closed cases remain valid
+and display **Closed (no outcome recorded)** or **No outcome** without fabricated
+verdicts. Startup adds the new table automatically; no existing columns change.
+
+Case history combines events and resolution rows, including analyst, timestamp,
+outcome, closing note, reopen reason and detector updates. Re-scoring preserves
+resolutions and closed cases. A real change to a closed incident's peak score or
+last activity adds one `updated_after_closure` event; reprocessing identical values
+does not add another. Resolution and reopening actions are audited; resolution
+audit detail contains only outcome and note length, never the closing note text.
+
+`GET /api/alerts` adds an `outcome` filter accepting comma-separated outcome keys.
+`GET /api/reports/risk` accepts the same filter plus `owner=<username>` or
+`owner=unassigned`. JSON rows and CSV gain owner/outcome columns, and the report
+summary adds `alerts_by_outcome` across all matching alerts before the detail limit.
+The report's `no_outcome` bucket includes both unresolved and legacy closed cases.
+
+`GET /api/evaluation/feedback` is staff-readable and completely separate from
+labelled lab evaluation and `EvaluationRun`. Its Evaluation-page section is titled
+**Operational feedback (analyst verdicts)**. It uses one current resolution per
+currently closed case; reopened and superseded historical verdicts are excluded.
+It returns counts by outcome, closed-with-outcome and legacy closed counts,
+`alert_precision = true_positive / all resolved alerts` (including false positive
+and benign/explained in the denominator), precision by severity category, top
+indicators in false-positive/benign cases, and median assignment-to-resolution time.
+Assignment time is captured in the resolution event so later reassignment cannot
+rewrite closure duration. Rows lacking a usable assignment time are omitted from
+the median, with `time_to_close_sample_count` reporting coverage.
+
+The feedback what-if table tests current peak-score thresholds 30, 40, 50, 60 and
+70 using `score >= threshold`. It reports alerts and true positives kept/lost,
+false positives and benign cases removed, and resulting reviewed-case precision.
+Undefined precision and closure time are null. Recall and F1 cannot be derived
+from analyst verdicts because missed attacks are never reviewed: those metrics
+remain available only from the labelled lab evaluation. Feedback never changes
+detection thresholds, scores, baselines, AI logic or lab results.
 
 ### Feeding your own telemetry
 ```bash

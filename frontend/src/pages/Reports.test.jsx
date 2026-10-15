@@ -20,6 +20,25 @@ beforeEach(() => {
   }))
 })
 
+it('filters by owner and outcome, showing verdict columns and the outcome chart', async () => {
+  api.report.mockImplementation(async filters => ({ generated_at: '2026-10-01T10:00:00', filters,
+    coverage: { events_analysed: 1, users_monitored: 1, baselines_established: 0 },
+    alerts: [{ alert_id: 7, user_id: 'u1', department: 'Finance', start_time: '2026-10-01T09:00:00', peak_score: 70, category: 'High', status: 'closed', owner: 'viewer', outcome: 'true_positive', indicators: 'bulk_download' }],
+    summary: { total_alerts: 1, avg_peak_score: 70, max_peak_score: 70, open_count: 0, closed_count: 1,
+      alerts_by_category: { High: 1 }, alerts_by_day: {}, top_indicators: [], top_users: [], alerts_by_outcome: { true_positive: 1, false_positive: 0, benign_explained: 0, no_outcome: 0 } },
+  }))
+  render(<MemoryRouter><Reports /></MemoryRouter>)
+  await screen.findByRole('option', { name: 'Finance' })
+  fireEvent.change(screen.getByLabelText('Owner'), { target: { value: 'viewer' } })
+  fireEvent.click(screen.getByLabelText('True positive'))
+  fireEvent.click(screen.getByRole('button', { name: 'Generate report' }))
+  await waitFor(() => expect(api.report).toHaveBeenCalledWith(expect.objectContaining({ owner: 'viewer', outcome: 'true_positive' })))
+  expect(await screen.findByRole('img', { name: 'Report outcomes' })).toBeInTheDocument()
+  expect(screen.getByRole('columnheader', { name: 'Owner' })).toBeInTheDocument()
+  expect(screen.getByRole('columnheader', { name: 'Outcome' })).toBeInTheDocument()
+  expect(screen.getByRole('cell', { name: 'viewer' })).toBeInTheDocument()
+})
+
 it('uses discovered departments and includes the entire final day', async () => {
   render(<MemoryRouter><Reports /></MemoryRouter>)
   await screen.findByRole('option', { name: 'Research Lab' })

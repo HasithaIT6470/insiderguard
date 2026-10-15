@@ -1,0 +1,18 @@
+{
+  "database": "isolated temporary SQLite backup",
+  "api_port": 8002,
+  "case_id": 3,
+  "empty_feedback": true,
+  "under_investigation_no_dialog": true,
+  "close_disabled_until_valid": true,
+  "reopen_reason_required": true,
+  "resolution_history_count": 2,
+  "current_outcome": "benign_explained",
+  "historical_verdict_not_counted": true,
+  "admin_edit_forbidden": true,
+  "updated_after_closure": true,
+  "read_only_history": true,
+  "feedback_charts": true,
+  "reports_owner_outcome_filters": true,
+  "runtime_errors": []
+}

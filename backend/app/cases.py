@@ -4,7 +4,7 @@ from datetime import timedelta
 from fastapi import HTTPException
 from sqlalchemy import select
 
-from .models import Alert, AlertAssignment, CaseEvent, User, utcnow
+from .models import Alert, AlertAssignment, AlertResolution, CaseEvent, User, utcnow
 from .security import audit
 
 
@@ -65,6 +65,8 @@ def workload(db):
     for event in db.scalars(select(CaseEvent).where(CaseEvent.action == "status_changed").order_by(CaseEvent.id)):
         if event.detail.get("to") == "closed":
             closed_at[event.alert_id] = event.created_at
+    for resolution in db.scalars(select(AlertResolution).where(AlertResolution.reopened_at.is_(None)).order_by(AlertResolution.id)):
+        closed_at[resolution.alert_id] = resolution.resolved_at
     result = []
     for analyst in db.scalars(select(User).where(User.role == "analyst").order_by(User.username)):
         alerts = grouped.get(analyst.username, [])

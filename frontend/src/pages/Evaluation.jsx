@@ -5,6 +5,7 @@ import { Bar } from 'react-chartjs-2'
 import { api } from '../api'
 import { useAuth } from '../App.jsx'
 import { Status, fmt, useLoad } from '../components.jsx'
+import OperationalFeedback from '../OperationalFeedback.jsx'
 
 ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend)
 export const MODE_LABEL = { rule_only: 'Rule-Only', anomaly_only: 'Anomaly-Only', hybrid: 'Hybrid' }
@@ -87,5 +88,6 @@ export default function Evaluation() {
         <p className="dash-disclaimer"><ShieldAlert size={15} aria-hidden="true" />Results reflect synthetic data only and should not be read as real-world accuracy.</p>
       </>}
     </Status>
+    <OperationalFeedback />
   </div>
 }

@@ -18,6 +18,7 @@ from .engine import (
 )
 from .models import (
     Alert,
+    AlertResolution,
     Baseline,
     CaseNote,
     CaseEvent,
@@ -165,6 +166,8 @@ def _sync_alerts(db: Session, uid: str, incidents: list[dict], cfg: dict) -> Non
     assignments = cases.owners_for(db, [a.id for a in existing.values()])
     history_ids = set(db.scalars(select(CaseEvent.alert_id).where(
         CaseEvent.alert_id.in_([a.id for a in existing.values()])).distinct()))
+    history_ids.update(db.scalars(select(AlertResolution.alert_id).where(
+        AlertResolution.alert_id.in_([a.id for a in existing.values()])).distinct()))
     states = cases.detection_states(db, [a.id for a in existing.values()])
     seen = set()
     shifted = {}
@@ -189,6 +192,12 @@ def _sync_alerts(db: Session, uid: str, incidents: list[dict], cfg: dict) -> Non
         if states.get(alert.id) == "no_longer_detected":
             cases.record_event(db, alert, "redetected", "system")
             audit(db, "system", "case_redetected", str(alert.id))
+        if alert.id is not None and alert.status == "closed" and (
+                alert.peak_score != inc["peak_score"] or alert.last_time != inc["last_time"]):
+            detail = {"old_peak_score": alert.peak_score, "new_peak_score": inc["peak_score"],
+                      "old_last_time": alert.last_time.isoformat(), "new_last_time": inc["last_time"].isoformat()}
+            cases.record_event(db, alert, "updated_after_closure", "system", detail)
+            audit(db, "system", "case_updated_after_closure", str(alert.id), detail)
         alert.last_time = inc["last_time"]
         alert.peak_score = inc["peak_score"]
         alert.category = categorize(inc["peak_score"], cfg)

@@ -162,6 +162,11 @@ body { background: #17191d; color: #e4e7ec; }
 .case-overview { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; }
 .case-event-list { padding-left: 20px; overflow-wrap: anywhere; }
 .case-event-list li + li { margin-top: 12px; }
+.case-resolution-note { white-space: pre-wrap; overflow-wrap: anywhere; }
+.outcome-true_positive { background: #d7edda; color: #1b5424; }
+.outcome-false_positive { background: #ffecb5; color: #664d03; }
+.outcome-benign_explained { background: #e2e5e9; color: #424b58; }
+.operational-feedback { border-top: 3px solid #657084; margin-top: 24px; }
 .alerts-pagination { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; padding-top: 18px; margin-top: 8px; border-top: 1px solid #e1e5eb; font-size: .78rem; color: #657084; }
 .alerts-pagination > div { display: flex; align-items: center; gap: 12px; }
 .alerts-pagination button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; }

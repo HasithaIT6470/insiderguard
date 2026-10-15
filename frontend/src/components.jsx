@@ -47,6 +47,19 @@ export function Status({ loading, error, children }) {
 }
 
 export const STATUS_LABEL = { open: 'Open', under_investigation: 'Under investigation', closed: 'Closed' }
+export const OUTCOME_LABEL = { true_positive: 'True positive', false_positive: 'False positive', benign_explained: 'Benign/explained' }
+export const OUTCOME_COLOR = { true_positive: '#2e7d32', false_positive: '#d29b24', benign_explained: '#657084', no_outcome: '#adb5bd' }
+
+export function OutcomeBadge({ outcome }) {
+  return OUTCOME_LABEL[outcome]
+    ? <span className={`badge outcome-badge outcome-${outcome}`}>{OUTCOME_LABEL[outcome]}</span>
+    : <span className="small text-muted">No outcome</span>
+}
+
+export function caseStatusLabel(alert) {
+  return alert.status === 'closed' && !(alert.outcome || alert.resolution?.outcome)
+    ? 'Closed (no outcome recorded)' : STATUS_LABEL[alert.status]
+}
 
 export const DISCLAIMER = 'Risk scores are investigative leads only and are not proof of malicious intent.'
 

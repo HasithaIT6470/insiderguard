@@ -4,8 +4,9 @@ import { BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, LineE
 import { Bar } from 'react-chartjs-2'
 import { api } from '../api'
 import { useAuth } from '../App.jsx'
-import { CaseActions, CaseEvents, ReleaseDialog, notifyCasesChanged } from '../cases.jsx'
-import { AttackChip, CategoryBadge, DISCLAIMER, ScoreBar, Status, STATUS_LABEL, fmt, useLoad } from '../components.jsx'
+import { CaseActions, CaseHistory, ReleaseDialog, notifyCasesChanged } from '../cases.jsx'
+import { CloseCaseDialog, ReopenCaseDialog } from '../resolutions.jsx'
+import { AttackChip, CategoryBadge, DISCLAIMER, OutcomeBadge, caseStatusLabel, ScoreBar, Status, STATUS_LABEL, fmt, useLoad } from '../components.jsx'
 
 ChartJS.register(BarElement, CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Legend)
 
@@ -55,6 +56,7 @@ function CasePanel({ alertId, query, editable }) {
   const navigate = useNavigate()
   const events = useLoad(() => api.alertEvents(alertId), [alertId])
   const [releasing, setReleasing] = useState(false)
+  const [transition, setTransition] = useState(null)
   const [actionError, setActionError] = useState(null)
   const refresh = () => { reload(); events.reload(); notifyCasesChanged() }
   const [note, setNote] = useState('')
@@ -75,6 +77,13 @@ function CasePanel({ alertId, query, editable }) {
       refresh()
     } catch (e) { setAiMsg(e.message); reload() } finally { setBusy(false) }
   }
+  const changeStatus = status => {
+    if (status === a.status) return
+    if (status === 'closed') setTransition({ kind: 'close', status })
+    else if (a.status === 'closed') setTransition({ kind: 'reopen', status })
+    else act(() => api.setStatus(a.id, status))
+  }
+  const completeTransition = () => { setTransition(null); refresh() }
 
   return (
     <Status loading={loading} error={error}>
@@ -91,7 +100,8 @@ function CasePanel({ alertId, query, editable }) {
             </div>
           </div>
           <div className="case-overview mb-3">
-            <span>Owner: <strong>{a.owner || 'Unassigned'}</strong></span><span>Status: <strong>{STATUS_LABEL[a.status]}</strong></span>
+            <span>Owner: <strong>{a.owner || 'Unassigned'}</strong></span><span>Status: <strong>{caseStatusLabel(a)}</strong></span>
+            {a.status === 'closed' && <OutcomeBadge outcome={a.outcome || a.resolution?.outcome} />}
             {!editable && <CaseActions alert={a} detail onComplete={refresh} />}
           </div>
           {(a.detection_state === 'no_longer_detected' ||
@@ -120,7 +130,7 @@ function CasePanel({ alertId, query, editable }) {
           {editable && <div className="d-flex align-items-center gap-2 mb-3">
             <label htmlFor="st" className="small text-muted">Status</label>
             <select id="st" className="form-select form-select-sm w-auto" value={a.status} disabled={busy}
-              onChange={(e) => { const status = e.target.value; if (status !== a.status && window.confirm(`Change Case #${a.id} to ${STATUS_LABEL[status]}?`)) act(() => api.setStatus(a.id, status)) }}>
+              onChange={e => changeStatus(e.target.value)}>
               {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>}
@@ -137,7 +147,9 @@ function CasePanel({ alertId, query, editable }) {
           {editable && a.status !== 'closed' && <button className="btn btn-sm btn-outline-danger mt-3" disabled={busy} onClick={() => setReleasing(true)}>Release case</button>}
           {releasing && <ReleaseDialog alertId={a.id} onClose={() => setReleasing(false)}
             onComplete={() => navigate(`/alerts/${a.id}`, { state: { notice: 'Case released back to the queue.' } })} />}
-          <CaseEvents events={events} />
+          {transition?.kind === 'close' && <CloseCaseDialog alertId={a.id} onClose={() => setTransition(null)} onComplete={completeTransition} />}
+          {transition?.kind === 'reopen' && <ReopenCaseDialog alertId={a.id} status={transition.status} onClose={() => setTransition(null)} onComplete={completeTransition} />}
+          <CaseHistory events={events} resolutions={a.resolution_history || []} />
         </div>
       )}
     </Status>

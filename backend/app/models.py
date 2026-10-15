@@ -162,6 +162,19 @@ class CaseEvent(Base):
     created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
+class AlertResolution(Base):
+    __tablename__ = "alert_resolutions"
+    id = Column(Integer, primary_key=True)
+    alert_id = Column(Integer, ForeignKey("alerts.id", ondelete="CASCADE"), index=True, nullable=False)
+    outcome = Column(String(24), nullable=False)
+    note = Column(Text, nullable=False)
+    resolved_by = Column(String(64), nullable=False)
+    resolved_at = Column(DateTime, default=utcnow, nullable=False)
+    reopened_at = Column(DateTime)
+    reopened_by = Column(String(64))
+    reopen_reason = Column(Text)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
     id = Column(Integer, primary_key=True)

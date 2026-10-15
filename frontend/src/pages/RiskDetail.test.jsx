@@ -78,24 +78,23 @@ it.each(['admin', 'analyst'])('keeps alert details read-only for %s', async role
   expect(screen.queryByLabelText('Status')).not.toBeInTheDocument()
   expect(screen.queryByLabelText('Investigation note')).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Request AI explanation' })).not.toBeInTheDocument()
-  expect(screen.getByRole('region', { name: 'Case event timeline' })).toBeInTheDocument()
+  expect(screen.getByRole('region', { name: 'Case history' })).toBeInTheDocument()
 })
 
-it('enables owner-only editing in My cases, confirms status changes and records notes', async () => {
+it('moves directly to under investigation in My cases and records notes', async () => {
   const alert = await api.alert()
   api.alert.mockResolvedValue({ ...alert, owner: 'analyst' })
   api.setStatus.mockResolvedValue({})
   api.addNote.mockResolvedValue({})
-  vi.spyOn(window, 'confirm').mockReturnValue(true)
   render(<MemoryRouter initialEntries={['/my-cases/1']}><Routes><Route path="/my-cases/:id" element={<RiskDetail mode="alert" editable />} /></Routes></MemoryRouter>)
   fireEvent.change(await screen.findByLabelText('Status'), { target: { value: 'under_investigation' } })
   await waitFor(() => expect(api.setStatus).toHaveBeenCalledWith(1, 'under_investigation'))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   fireEvent.change(await screen.findByLabelText('Investigation note'), { target: { value: 'Reviewed synthetic evidence' } })
   fireEvent.click(screen.getByRole('button', { name: 'Add', exact: true }))
   await waitFor(() => expect(api.addNote).toHaveBeenCalledWith(1, 'Reviewed synthetic evidence'))
   expect(await screen.findByRole('button', { name: 'Request AI explanation' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Release case' })).toBeInTheDocument()
-  window.confirm.mockRestore()
 })
 
 it('redirects non-owners to read-only details with a message', async () => {
@@ -136,4 +135,40 @@ it('releases an owned case with a reason and returns to read-only details', asyn
   await waitFor(() => expect(api.releaseAlert).toHaveBeenCalledWith(1, 'End of shift handoff'))
   expect(await screen.findByText('Case released back to the queue.')).toBeInTheDocument()
   expect(screen.queryByLabelText('Investigation note')).not.toBeInTheDocument()
+})
+
+it('labels legacy closed details without inventing an outcome', async () => {
+  const alert = await api.alert()
+  api.alert.mockResolvedValue({ ...alert, status: 'closed', resolution: null, outcome: null })
+  renderAlert()
+  expect(await screen.findByText('Closed (no outcome recorded)')).toBeInTheDocument()
+  expect(screen.getByText('No outcome')).toBeInTheDocument()
+})
+
+it('uses close and reopen dialogs in the owner workspace and retains the closing note', async () => {
+  const initial = { ...await api.alert(), owner: 'analyst' }
+  const verdict = { id: 3, outcome: 'true_positive', note: 'Confirmed synthetic policy violation.', resolved_by: 'analyst', resolved_at: '2026-10-01T09:00:00' }
+  api.alert.mockResolvedValue(initial)
+  api.setStatus.mockImplementation(async (_id, status) => {
+    api.alert.mockResolvedValue({ ...initial, status, outcome: status === 'closed' ? verdict.outcome : null,
+      resolution: status === 'closed' ? verdict : null, resolution_history: [verdict] })
+    return {}
+  })
+  HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
+  HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
+  render(<MemoryRouter initialEntries={['/my-cases/1']}><Routes><Route path="/my-cases/:id" element={<RiskDetail mode="alert" editable />} /></Routes></MemoryRouter>)
+  fireEvent.change(await screen.findByLabelText('Status'), { target: { value: 'closed' } })
+  expect(screen.getByRole('dialog', { name: 'Close Case #1' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('radio', { name: /True positive/ }))
+  fireEvent.change(screen.getByLabelText('Closing note'), { target: { value: verdict.note } })
+  fireEvent.click(screen.getByRole('button', { name: 'Close case' }))
+  await waitFor(() => expect(api.setStatus).toHaveBeenCalledWith(1, 'closed', { outcome: 'true_positive', note: verdict.note }))
+  expect(await screen.findByText(verdict.note)).toBeInTheDocument()
+  expect(screen.getByLabelText('Status')).toHaveValue('closed')
+  fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'under_investigation' } })
+  expect(screen.getByRole('dialog', { name: 'Reopen Case #1' })).toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('Reopen reason'), { target: { value: 'New evidence needs review' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Reopen case' }))
+  await waitFor(() => expect(api.setStatus).toHaveBeenCalledWith(1, 'under_investigation', { reason: 'New evidence needs review' }))
+  expect(await screen.findByText(verdict.note)).toBeInTheDocument()
 })
