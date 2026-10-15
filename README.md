@@ -387,3 +387,15 @@ The script writes [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md) from the actual run, 
 The primary admin and analyst use their configured development credentials; analyst2 uses `DemoReview#23456`, and analyst3 uses `DemoReview#34567`. These are demo-only passwords. The generated guide includes the configured credentials, so never generate a shared guide using production secrets. `--with-ai` requests real explanations only when an AI key is configured; it is the only mode that needs network access.
 
 **Honeytoken scoring correction:** touching a registered honeytoken no longer also emits `novel_resource_category` solely because its decoy type was absent from the baseline. An isolated normal-hour touch now scores **50 rather than 68**. Other independently valid indicators still contribute normally. This small engine fix affects both seeds, so risk scores and lab evaluation numbers have changed; regenerate/recompute and rerun evaluation when comparing with older results. No other detection or scoring logic changed.
+
+
+## Simulated activity lab
+
+The separate [Activity Lab](simulator/README.md) sends synthetic employee events to the running InsiderGuard API. After starting the backend on port 8000 and frontend on port 5173, open a third terminal:
+
+```powershell
+cd simulator
+npm.cmd start
+```
+
+Open http://localhost:5175 or select **Simulated Lab** in the sidebar. Connect with an administrator account, choose **Prepare new employee**, and select a scenario. Node.js is required; the simulator has no package dependencies. Submitted events and cases remain in the database. Use **Prepare new employee** for an independent demonstration.

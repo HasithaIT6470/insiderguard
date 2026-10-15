@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Activity Lab · InsiderGuard simulator</title><link rel="stylesheet" href="/styles.css"></head>
+<body>
+  <header><div class="brand"><span class="logo">AL</span><div><strong>Activity Lab</strong><small>Synthetic employee activity simulator</small></div></div><a href="http://localhost:5173" target="_blank" rel="noopener">Open InsiderGuard ↗</a></header>
+  <main>
+    <div class="intro"><div><span class="eyebrow">SUPERVISOR DEMONSTRATION</span><h1>Trigger activity. See the evidence.</h1><p>This separate application sends synthetic events to InsiderGuard’s real API. The detection system calculates every score and alert.</p></div><span id="connection" class="pill">Disconnected</span></div>
+    <div id="message" role="status" hidden></div>
+    <section id="login" class="card"><h2>Connect to InsiderGuard</h2><p>Use a platform administrator account to authorize telemetry submission. This login identifies the demo operator.</p><form id="connect-form"><label>Username<input id="username" autocomplete="username" value="admin" required></label><label>Password<input id="password" type="password" autocomplete="current-password" required></label><button id="connect-button">Connect</button></form></section>
+    <div id="workspace" hidden>
+      <section class="connection-bar"><span id="operator"></span><span>Local REST/JSON connection · synthetic events only</span><button id="disconnect" class="quiet">Disconnect</button></section>
+      <div class="layout"><div>
+        <section class="card employee"><div class="section-top"><div><span class="eyebrow">SIMULATED EMPLOYEE</span><h2 id="employee-id">No demo employee yet</h2></div><button id="prepare">Prepare new employee</button></div><p id="employee-description">Prepare a unique employee with normal learning history. This preserves previous profiles and cases.</p><div class="facts"><span>Department <b>Simulator Lab</b></span><span>Known device <b id="device">—</b></span><span>Simulation date (UTC) <b id="date">—</b></span><span>Baseline <b id="baseline">Not prepared</b></span></div><p class="hint">New employees start with normal history. Historical risk remains after suspicious activity; use a new employee to demonstrate a fresh baseline.</p></section>
+        <section class="card"><div class="section-top"><h2>Employee actions</h2><span class="muted">Choose a scenario to send events</span></div><div id="scenarios" class="scenarios"></div></section>
+        <section class="card"><div class="section-top"><h2>Transmission history</h2><button id="clear-log" class="quiet">Clear display</button></div><p class="hint">Clearing this display does not delete stored events or audit records.</p><div id="history" aria-live="polite"><p class="muted">No transmissions yet.</p></div></section>
+      </div><aside>
+        <section class="card result"><span class="eyebrow">INSIDERGUARD RESPONSE</span><div class="score"><strong id="score">—</strong><span>/ 100</span></div><span id="category" class="pill">No employee</span><p class="hint">Current risk is the peak in the configured recent dataset window. Individual signals can stay below the alert threshold.</p><div class="metrics"><span>Stored events <b id="event-count">0</b></span><span>Employee alerts <b id="alert-count">0</b></span></div><div id="detector-link"></div><button id="refresh" class="quiet wide">Refresh detector response</button></section>
+        <section class="card"><h2>Decoy registry</h2><p>Register this employee’s synthetic payroll decoy before using the honeytoken scenarios.</p><code id="decoy-resource">Prepare an employee first</code><span id="decoy-status" class="muted">Not registered</span><button id="register" class="wide">Register demo decoy</button></section>
+        <section class="card"><h2>Contributing evidence</h2><div id="evidence"><p class="muted">No detector evidence yet.</p></div></section>
+      </aside></div>
+    </div>
+    <footer>Investigative leads, not proof of malicious intent. This simulator does not monitor your computer or access actual employee files.</footer>
+  </main><script type="module" src="/app.js"></script>
+</body></html>

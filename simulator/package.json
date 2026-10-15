@@ -1,0 +1,6 @@
+{
+  "name": "insiderguard-activity-simulator",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node server.cjs", "test": "node --test scenarios.test.js" }
+}
