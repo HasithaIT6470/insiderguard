@@ -6,6 +6,7 @@ import { api } from '../api'
 import { useAuth } from '../App.jsx'
 import { CaseActions, CaseHistory, ReleaseDialog, notifyCasesChanged } from '../cases.jsx'
 import { CloseCaseDialog, ReopenCaseDialog } from '../resolutions.jsx'
+import { EscalateCase } from '../escalations.jsx'
 import { AttackChip, CategoryBadge, DISCLAIMER, OutcomeBadge, caseStatusLabel, ScoreBar, Status, STATUS_LABEL, fmt, useLoad } from '../components.jsx'
 
 ChartJS.register(BarElement, CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Legend)
@@ -144,6 +145,7 @@ function CasePanel({ alertId, query, editable }) {
             <input className="form-control form-control-sm" placeholder="Add investigation note…" value={note} maxLength={4000} onChange={(e) => setNote(e.target.value)} aria-label="Investigation note" />
             <button className="btn btn-sm btn-primary" disabled={busy || !note.trim()}>Add</button>
           </form>}
+          {editable && <EscalateCase alert={a} onComplete={refresh} />}
           {editable && a.status !== 'closed' && <button className="btn btn-sm btn-outline-danger mt-3" disabled={busy} onClick={() => setReleasing(true)}>Release case</button>}
           {releasing && <ReleaseDialog alertId={a.id} onClose={() => setReleasing(false)}
             onComplete={() => navigate(`/alerts/${a.id}`, { state: { notice: 'Case released back to the queue.' } })} />}

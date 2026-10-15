@@ -246,3 +246,49 @@ class EmployeeContact(Base):
     summary = Column(Text, nullable=False)
     escalation_id = Column(Integer)
     created_at = Column(DateTime, default=utcnow, nullable=False)
+
+
+class Escalation(Base):
+    __tablename__ = "escalations"
+    id = Column(Integer, primary_key=True)
+    alert_id = Column(Integer, ForeignKey("alerts.id"), index=True, nullable=False)
+    user_id = Column(String(64), index=True, nullable=False)
+    created_by = Column(String(64), nullable=False)
+    priority = Column(String(16), nullable=False)
+    summary = Column(Text, nullable=False)
+    recommendation = Column(String(32), nullable=False)
+    recommendation_note = Column(Text, default="")
+    case_status_at_filing = Column(String(24), nullable=False)
+    snapshot = Column(JSON, nullable=False)
+    status = Column(String(24), default="submitted", nullable=False)
+    handled_by = Column(String(64))
+    handling_note = Column(Text)
+    contact_method = Column(String(16))
+    completed_at = Column(DateTime)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, nullable=False)
+    __table_args__ = (Index("uq_escalation_open_alert", alert_id, unique=True,
+                           sqlite_where=status.notin_(["completed", "withdrawn"]),
+                           postgresql_where=status.notin_(["completed", "withdrawn"])),)
+
+
+class EscalationMessage(Base):
+    __tablename__ = "escalation_messages"
+    id = Column(Integer, primary_key=True)
+    escalation_id = Column(Integer, ForeignKey("escalations.id"), index=True, nullable=False)
+    author = Column(String(64), nullable=False)
+    role = Column(String(16), nullable=False)
+    message = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+
+
+class EscalationEvent(Base):
+    __tablename__ = "escalation_events"
+    id = Column(Integer, primary_key=True)
+    escalation_id = Column(Integer, ForeignKey("escalations.id"), index=True, nullable=False)
+    actor = Column(String(64), nullable=False)
+    role = Column(String(16), nullable=False)
+    action = Column(String(48), nullable=False)
+    from_status = Column(String(24))
+    to_status = Column(String(24), nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)

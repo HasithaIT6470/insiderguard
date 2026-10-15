@@ -309,3 +309,7 @@ body { background: #17191d; color: #e4e7ec; }
 .heatmap-cell { height: 24px; border-radius: 3px; border: 1px solid #e6eaf0; }
 @media (max-width: 1200px) { .users-chart-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .users-chart-grid, .users-chart-grid.two { grid-template-columns: 1fr; } }
+.escalation-status { color: #27374b; background: #e4eaf2; }
+.escalation-needs_info { color: #704e00; background: #fff0bf; }
+.escalation-completed { color: #195d43; background: #d9f2e7; }
+.escalation-withdrawn { color: #566174; background: #edf0f5; }

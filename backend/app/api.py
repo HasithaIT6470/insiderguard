@@ -22,12 +22,13 @@ from .database import SessionLocal, get_db
 from .evaluation import run_evaluation
 from .models import (
     Alert, AuditLog, Baseline, CaseNote, Detection, Event, EvaluationRun, Honeytoken, ParseError, RiskPoint,
-    AlertAssignment, CaseEvent, RuleConfig, Subject, User, utcnow,
+    AlertAssignment, CaseEvent, Escalation, RuleConfig, Subject, User, utcnow,
 )
 from .pipeline import current_risk, dataset_end, ingest_records, load_config, reprocess_users
 from .reports import router as reports_router
 from .employees import router as employees_router
 from .user_overview import router as user_overview_router
+from .escalations import router as escalations_router
 from .security import (
     ROLES, audit, create_token, get_current_user, hash_password, require_admin, require_analyst, require_staff, verify_password,
 )
@@ -36,6 +37,7 @@ router = APIRouter(prefix="/api")
 router.include_router(reports_router)
 router.include_router(employees_router)
 router.include_router(user_overview_router)
+router.include_router(escalations_router)
 
 # --------------------------------------------------------------------------- helpers
 _login_failures: dict[str, list[float]] = defaultdict(list)
@@ -560,7 +562,9 @@ def get_alert(alert_id: int, db: Session = Depends(get_db), user: User = Depends
     db.commit()
     return {**_alert_dict(a, sub.department if sub else None, notes, cases.owners_for(db, [a.id]).get(a.id),
                          cases.detection_states(db, [a.id]).get(a.id), resolutions.current_for(db, [a.id]).get(a.id)),
-            "resolution_history": resolutions.history_for(db, a.id)}
+            "resolution_history": resolutions.history_for(db, a.id),
+            "open_escalation_id": db.scalar(select(Escalation.id).where(
+                Escalation.alert_id == a.id, Escalation.status.notin_(["completed", "withdrawn"])))}
 
 
 class StatusIn(BaseModel):

@@ -15,6 +15,7 @@ import Profile from './pages/Profile.jsx'
 import MyCases from './pages/MyCases.jsx'
 import UsersPage from './pages/Users.jsx'
 import UserProfile from './pages/UserProfile.jsx'
+import Escalations from './pages/Escalations.jsx'
 
 const AuthCtx = createContext(null)
 export const useAuth = () => useContext(AuthCtx)
@@ -22,6 +23,14 @@ export const useAuth = () => useContext(AuthCtx)
 function Shell({ children }) {
   const { auth, logout } = useAuth()
   const location = useLocation()
+  const escalations = useLoad(() => api.escalationSummary(), [auth.username, auth.role, location.pathname])
+  useEffect(() => {
+    const update = () => escalations.reload()
+    window.addEventListener('escalations-updated', update)
+    window.addEventListener('focus', update)
+    const timer = window.setInterval(update, 30000)
+    return () => { window.removeEventListener('escalations-updated', update); window.removeEventListener('focus', update); window.clearInterval(timer) }
+  }, [auth.username, auth.role])
   const mine = useLoad(() => auth.role === 'analyst' ? api.myCases() : Promise.resolve(null), [auth.username, auth.role, location.pathname])
   useEffect(() => {
     if (auth.role !== 'analyst') return
@@ -70,6 +79,7 @@ function Shell({ children }) {
     ['/', 'Dashboard', LayoutDashboard],
     ['/alerts', 'Alerts', Siren],
     ['/users', 'Users', Users],
+    ['/escalations', auth.role === 'admin' ? 'Escalations' : 'My escalations', Siren],
     ...(auth.role === 'analyst' ? [['/my-cases', 'My cases', Users]] : []),
     ['/reports', 'Reports', BarChart3],
     ['/evaluation', 'Evaluation', FlaskConical],
@@ -93,6 +103,7 @@ function Shell({ children }) {
             <NavLink key={to} to={to} end={to === '/'} className="ig-nav-link" onClick={() => setMenuOpen(false)}>
               <Icon size={20} aria-hidden="true" /><span>{label}</span>
               {to === '/my-cases' && <span className="badge bg-secondary" aria-label="Active cases">{(mine.data?.summary?.open || 0) + (mine.data?.summary?.under_investigation || 0)}</span>}
+              {to === '/escalations' && <span className={`badge ${escalations.data?.overdue_count ? 'bg-danger' : 'bg-secondary'}`} aria-label="Open escalations" title={`${escalations.data?.overdue_count || 0} overdue`}>{escalations.data?.open_count ?? '–'}</span>}
             </NavLink>
           ))}
           <a className="ig-nav-link" href="http://localhost:5175" target="_blank" rel="noopener noreferrer" onClick={() => setMenuOpen(false)} aria-label="Simulated Lab (opens in a new tab)">
@@ -159,6 +170,8 @@ export default function App() {
         <Route path="/my-cases/:id" element={<Protected><AnalystOnly><RiskDetail mode="alert" editable /></AnalystOnly></Protected>} />
         <Route path="/users" element={<Protected><UsersPage /></Protected>} />
         <Route path="/users/:id" element={<Protected><UserProfile /></Protected>} />
+        <Route path="/escalations" element={<Protected><Escalations /></Protected>} />
+        <Route path="/escalations/:id" element={<Protected><Escalations /></Protected>} />
         <Route path="/reports" element={<Protected><Reports /></Protected>} />
         <Route path="/evaluation" element={<Protected><Evaluation /></Protected>} />
         <Route path="/telemetry" element={<Protected><Telemetry /></Protected>} />

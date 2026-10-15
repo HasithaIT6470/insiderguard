@@ -190,7 +190,8 @@ def offboard(user_id: str, db: Session = Depends(get_db), user: User = Depends(r
 
 @router.get("/{user_id}/contacts")
 def contacts(user_id: str, db: Session = Depends(get_db), user: User = Depends(require_admin)):
-    find(db, user_id)
+    if not db.get(Subject, user_id):
+        find(db, user_id)
     rows = db.scalars(select(EmployeeContact).where(EmployeeContact.user_id == user_id).order_by(EmployeeContact.created_at.desc(), EmployeeContact.id.desc())).all()
     audit(db, user, "view_employee_contacts", user_id)
     db.commit()

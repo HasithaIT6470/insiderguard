@@ -6,9 +6,10 @@ import { CategoryBadge, OutcomeBadge, Status, caseStatusLabel, fmt, useLoad } fr
 import { CaseDialog } from '../cases.jsx'
 import { EMPLOYEE_FIELDS, EmployeeDialog, EmployeeForm, employmentLabel } from '../employees.jsx'
 import { UserChart } from '../userCharts.jsx'
+import { EscalationStatus, PriorityBadge } from '../escalations.jsx'
 
 function ContactLog({ userId, hasProfile }) {
-  const log = useLoad(() => hasProfile ? api.employeeContacts(userId) : Promise.resolve([]), [userId, hasProfile])
+  const log = useLoad(() => api.employeeContacts(userId), [userId, hasProfile])
   const [adding, setAdding] = useState(false)
   const [method, setMethod] = useState('email')
   const [summary, setSummary] = useState('')
@@ -18,7 +19,7 @@ function ContactLog({ userId, hasProfile }) {
     event.preventDefault(); setBusy(true); setError(null)
     try { await api.addEmployeeContact(userId, { method, summary }); setAdding(false); setSummary(''); log.reload() } catch (e) { setError(e.message) } finally { setBusy(false) }
   }
-  return <><h2 className="h5">Contact log</h2>{hasProfile ? <button className="btn btn-primary mb-3" onClick={() => setAdding(true)}>Add contact record</button> : <p>Create a profile before recording contact.</p>}<Status loading={log.loading} error={log.error}>{log.data?.length ? log.data.map(row => <article key={row.id} className="border-bottom py-3"><strong>{employmentLabel(row.method)}</strong> · {row.contacted_by} · {fmt(row.created_at)}<p className="mb-0 text-break">{row.summary}</p></article>) : <p className="text-muted">No contact records yet.</p>}</Status>
+  return <><h2 className="h5">Contact log</h2>{hasProfile ? <button className="btn btn-primary mb-3" onClick={() => setAdding(true)}>Add contact record</button> : <p>Create a profile before recording contact.</p>}<Status loading={log.loading} error={log.error}>{log.data?.length ? log.data.map(row => <article key={row.id} className="border-bottom py-3"><strong>{employmentLabel(row.method)}</strong> · {row.contacted_by} · {fmt(row.created_at)}{row.escalation_id && <Link className="ms-2" to={`/escalations/${row.escalation_id}`}>Escalation #{row.escalation_id}</Link>}<p className="mb-0 text-break">{row.summary}</p></article>) : <p className="text-muted">No contact records yet.</p>}</Status>
     {adding && <CaseDialog title="Add contact record" onClose={() => setAdding(false)} busy={busy}><form onSubmit={submit}><label className="d-block mb-3">Method<select className="form-select" value={method} onChange={e => setMethod(e.target.value)}>{['email', 'phone', 'in_person', 'other'].map(m => <option key={m} value={m}>{employmentLabel(m)}</option>)}</select></label><label className="d-block">Summary<textarea className="form-control" value={summary} maxLength={4000} required onChange={e => setSummary(e.target.value)} /></label>{error && <p role="alert" className="alert alert-danger">{error}</p>}<div className="d-flex justify-content-end gap-2 mt-3"><button type="button" className="btn btn-outline-secondary" disabled={busy} onClick={() => setAdding(false)}>Cancel</button><button className="btn btn-primary" disabled={busy || !summary.trim()}>Save contact record</button></div></form></CaseDialog>}
   </>
 }
@@ -66,7 +67,7 @@ export default function UserProfile() {
       {tab === 'Activity and risk' && <Activity data={data} />}
       {tab === 'Case history' && <><h2 className="h5">Case history</h2>{data.case_history.length ? <div className="table-responsive"><table className="table align-middle"><thead><tr><th>Case</th><th>Severity</th><th>Peak score</th><th>Status</th><th>Owner</th><th>Outcome</th></tr></thead><tbody>{data.case_history.map(a => <tr key={a.id}><td><Link to={`/alerts/${a.id}`}>Case #{a.id}</Link></td><td><CategoryBadge category={a.category} /></td><td>{a.peak_score}</td><td>{caseStatusLabel(a)}</td><td>{a.owner || 'Unassigned'}</td><td>{a.status === 'closed' ? <OutcomeBadge outcome={a.outcome} /> : '—'}</td></tr>)}</tbody></table></div> : <p className="text-muted">No cases for this user.</p>}</>}
       {tab === 'Analyst notes' && <><h2 className="h5">Analyst notes</h2>{data.case_notes.length ? data.case_notes.map(n => <article key={n.id} className="border-bottom py-3"><Link to={`/alerts/${n.alert_id}`}>Case #{n.alert_id}</Link> · {n.author} · {fmt(n.created_at)}<p className="employee-value text-break">{n.note}</p></article>) : <p className="text-muted">No analyst notes yet.</p>}</>}
-      {tab === 'Escalations' && <><h2 className="h5">Escalations</h2><p className="text-muted">No escalations yet.</p></>}
+      {tab === 'Escalations' && <><h2 className="h5">Escalations</h2>{data.escalations.length ? <div className="table-responsive"><table className="table align-middle"><thead><tr><th>Escalation</th><th>Status</th><th>Priority</th><th>Filed by</th><th>Created</th><th>Handling note</th></tr></thead><tbody>{data.escalations.map(e => <tr key={e.id}><td><Link to={`/escalations/${e.id}`}>Escalation #{e.id}</Link></td><td><EscalationStatus status={e.status} /></td><td><PriorityBadge priority={e.priority} /></td><td>{e.created_by}</td><td>{fmt(e.created_at)}</td><td className="employee-value text-break">{e.handling_note || 'Pending'}</td></tr>)}</tbody></table></div> : <p className="text-muted">No escalations yet.</p>}</>}
       {admin && tab === 'Personal information' && <PersonalInformation userId={id} department={data.department} onUpdate={overview.reload} />}
       {admin && tab === 'Contact log' && <ContactLog userId={id} hasProfile={data.has_profile} />}
     </div></>}</Status></div>

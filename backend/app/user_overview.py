@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from . import cases, resolutions
 from .database import get_db
-from .models import Alert, Baseline, CaseNote, EmployeeProfile, Event, RiskPoint, Subject, User, utcnow
+from .models import Alert, Baseline, CaseNote, EmployeeProfile, Event, Escalation, RiskPoint, Subject, User, utcnow
 from .pipeline import current_risk, dataset_end, load_config
 from .security import audit, require_staff
 
@@ -98,4 +98,6 @@ def overview(user_id: str, db: Session = Depends(get_db), user: User = Depends(r
                               "outcome": verdicts[a.id].outcome if a.id in verdicts else None, "peak_score": a.peak_score,
                               "category": a.category, "start_time": iso(a.start_time)} for a in alerts],
             "case_notes": [{"id": n.id, "alert_id": n.alert_id, "author": n.author, "note": n.note, "created_at": iso(n.created_at)} for n in notes],
-            "escalations": []}
+            "escalations": [{"id": e.id, "status": e.status, "priority": e.priority, "created_by": e.created_by,
+                             "created_at": iso(e.created_at), "handling_note": e.handling_note}
+                            for e in db.scalars(select(Escalation).where(Escalation.user_id == user_id).order_by(Escalation.created_at.desc()))]}
