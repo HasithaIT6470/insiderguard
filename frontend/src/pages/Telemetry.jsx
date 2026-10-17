@@ -210,7 +210,19 @@ function Rules({ isAdmin }) {
 
 function AdminTables() {
   const errs = useLoad(() => api.parseErrors())
-  const audit = useLoad(() => api.audit())
+  const [draft, setDraft] = useState({ actor: '', start: '', end: '' })
+  const [filters, setFilters] = useState({})
+  const [filterError, setFilterError] = useState('')
+  const audit = useLoad(() => api.audit(filters), [filters])
+  const applyFilters = event => {
+    event.preventDefault()
+    if (draft.start && draft.end && draft.start > draft.end) {
+      setFilterError('Start date/time must be before or equal to end date/time.')
+      return
+    }
+    setFilterError('')
+    setFilters(Object.fromEntries(Object.entries(draft).filter(([, value]) => value.trim()).map(([key, value]) => [key, key === 'actor' ? value.trim() : `${value}Z`])))
+  }
   return (
     <div className="telemetry-logs">
         <section className="card dash-panel">
@@ -226,11 +238,20 @@ function AdminTables() {
         </section>
         <section className="card dash-panel">
           <div className="dash-panel-heading"><div><h2>Audit log</h2><p>Latest recorded administrator and analyst activity</p></div><button className="btn btn-sm btn-outline-secondary telemetry-icon-button" aria-label="Refresh audit log" title="Refresh audit log" onClick={audit.reload} disabled={audit.loading}><RefreshCw size={16} /></button></div>
+          <form className="d-flex flex-wrap align-items-end gap-2 mb-3" onSubmit={applyFilters}>
+            <label className="small">Actor (exact username)<input className="form-control form-control-sm" value={draft.actor} onChange={e => setDraft({ ...draft, actor: e.target.value })} /></label>
+            <label className="small">From (UTC)<input type="datetime-local" step="1" className="form-control form-control-sm" value={draft.start} onChange={e => setDraft({ ...draft, start: e.target.value })} /></label>
+            <label className="small">To (UTC)<input type="datetime-local" step="1" className="form-control form-control-sm" value={draft.end} onChange={e => setDraft({ ...draft, end: e.target.value })} /></label>
+            <button className="btn btn-sm btn-primary" type="submit">Apply audit filters</button>
+            <button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => { setDraft({ actor: '', start: '', end: '' }); setFilters({}); setFilterError('') }}>Clear audit filters</button>
+          </form>
+          {filterError && <div role="alert" className="alert alert-danger">{filterError}</div>}
+          <p className="small text-muted">Latest 200 matching entries. Date/time boundaries are inclusive and use UTC.</p>
           <Status loading={audit.loading} error={audit.error}>
             <div style={{ maxHeight: 280, overflowY: 'auto' }}>
               <table className="table table-sm mb-0"><thead><tr><th scope="col">Recorded (UTC)</th><th scope="col">Actor</th><th scope="col">Action / target</th></tr></thead><tbody>
                 {(audit.data || []).map((a) => <tr key={a.id}><td className="small text-nowrap">{fmt(a.timestamp)}</td><td>{a.actor}</td><td className="small">{a.action}{a.target ? ` / ${a.target}` : ''}</td></tr>)}
-                {audit.data?.length === 0 && <tr><td colSpan={3} className="text-muted">No activity logged.</td></tr>}
+                {audit.data?.length === 0 && <tr><td colSpan={3} className="text-muted">No activity matches these filters.</td></tr>}
               </tbody></table>
             </div>
           </Status>

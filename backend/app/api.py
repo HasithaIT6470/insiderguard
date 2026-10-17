@@ -6,7 +6,7 @@ import io
 import json
 import time
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, HTTPException, Query, UploadFile
@@ -806,11 +806,21 @@ def evaluation_run(threshold: float | None = Query(None, ge=1, le=100), db: Sess
 
 
 @router.get("/audit")
-def audit_log(limit: int = Query(200, le=1000), actor: str | None = None, db: Session = Depends(get_db),
+def audit_log(limit: int = Query(200, ge=1, le=1000), actor: str | None = None,
+              start: datetime | None = None, end: datetime | None = None, db: Session = Depends(get_db),
               admin: User = Depends(require_admin)):
-    q = select(AuditLog).order_by(AuditLog.id.desc()).limit(limit)
-    if actor:
-        q = q.where(AuditLog.actor == actor)
+    # Stored timestamps are naive UTC; normalize offset-aware query values.
+    start = start.astimezone(timezone.utc).replace(tzinfo=None) if start and start.tzinfo else start
+    end = end.astimezone(timezone.utc).replace(tzinfo=None) if end and end.tzinfo else end
+    if start and end and start > end:
+        raise HTTPException(422, "Start date/time must be before or equal to end date/time")
+    q = select(AuditLog).order_by(AuditLog.timestamp.desc(), AuditLog.id.desc()).limit(limit)
+    if actor and actor.strip():
+        q = q.where(AuditLog.actor == actor.strip())
+    if start:
+        q = q.where(AuditLog.timestamp >= start)
+    if end:
+        q = q.where(AuditLog.timestamp <= end)
     return [{"id": a.id, "timestamp": _iso(a.timestamp), "actor": a.actor, "role": a.role, "action": a.action,
              "target": a.target, "detail": a.detail} for a in db.scalars(q)]
 

@@ -120,7 +120,7 @@ export const api = {
   reportIndicators: () => request('/reports/indicators'),
   reportRange: () => request('/reports/range'),
   reportCsv: async (params = {}) => (await request(`/reports/risk?${new URLSearchParams({ ...params, format: 'csv' })}`, { raw: true })).blob(),
-  audit: () => request('/audit?limit=200'),
+  audit: (params = {}) => request(`/audit?${new URLSearchParams({ limit: 200, ...params })}`),
   escalations: (params = {}) => request(`/escalations?${new URLSearchParams(params)}`),
   escalation: (id) => request(`/escalations/${id}`),
   escalationSummary: () => request('/escalations/summary'),
