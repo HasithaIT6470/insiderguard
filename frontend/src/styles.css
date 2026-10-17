@@ -207,9 +207,10 @@ body { background: #17191d; color: #e4e7ec; }
 .reports-chips > span { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; background: #e8effc; color: #194f9d; font-size: .75rem; border-radius: 4px; overflow-wrap: anywhere; }
 .reports-chips button { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; background: transparent; color: inherit; flex-shrink: 0; }
 .reports-coverage { color: #b9c1cf; font-size: .78rem; margin: 0; }
-.reports-charts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.reports-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.reports-charts > section { min-width: 0; }
 .reports-chart { height: 270px; position: relative; min-width: 0; }
-@media (max-width: 1399.98px) { .reports-charts { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 767.98px) { .reports-charts { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 767.98px) { .reports-filter-grid, .reports-checkbox-grid { grid-template-columns: minmax(0, 1fr); } }
 @media print { .reports-chips button { display: none; } .reports-charts { grid-template-columns: repeat(2, minmax(0, 1fr)); } .reports-charts > section { break-inside: avoid; } .reports-chart { height: 220px; } .reports-coverage { color: #526071; } }
 .evaluation-actions, .evaluation-actions button { display: flex; align-items: center; justify-content: center; gap: 8px; }
